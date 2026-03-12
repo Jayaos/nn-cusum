@@ -14,9 +14,9 @@ def parse_args():
     p = argparse.ArgumentParser()
 
     # data / problem
-    p.add_argument("--save_dir", type=str, default="./results/mfg_flow_toy_example/")
-    p.add_argument("--dataset_type", type=str, default="./vae_mfg_flow_matching/vae_shoebags_config.yaml")
-    p.add_argument("--dataset_dir", type=str, default="./vae_mfg_flow_matching/vae_shoebags.ckpt")
+    p.add_argument("--save_dir", type=str, default="./results/")
+    p.add_argument("--dataset_type", type=str, default="higgs_all")
+    p.add_argument("--dataset_dir", type=str, default="./data/")
     p.add_argument("--f0_len", type=int)
     p.add_argument("--f1_len", type=int)
     p.add_argument("--iter_num", type=int)
