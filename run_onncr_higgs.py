@@ -24,6 +24,7 @@ def parse_args():
     p.add_argument("--f0_len", type=int)
     p.add_argument("--f1_len", type=int)
     p.add_argument("--iter_num", type=int)
+    p.add_argument("--device", type=str, default="cpu")
 
     return p.parse_args()
 
@@ -50,11 +51,13 @@ if __name__ == "__main__":
              background, 
              signal, 
              args.iter_num,
-             os.path.join(args.save_dir, "onnc/"))
+             os.path.join(args.save_dir, "onnc/"),
+             args.device)
     
     run_onnr(args.hidden_dims, args.window_size, args.stride, args.lag_size, args.learning_rate, args.epoch,
              args.f0_len, args.f1_len,
              background, 
              signal, 
              args.iter_num,
-             os.path.join(args.save_dir, "onnr/"))
+             os.path.join(args.save_dir, "onnr/"),
+             args.device)

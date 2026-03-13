@@ -55,11 +55,22 @@ class MLP(nn.Module):
         x = self.layers[-1](x)
         return self.final_activation(x)
 
-
 class ChangePointDetectionOnline(object):
     
-    def __init__(self, metric="KL", batch_size=1, periods=10, lag_size=100, step=1, 
-                 n_epochs=1, lr=0.1, lam=0., optimizer="RMSprop", debug=0):
+    def __init__(
+        self,
+        metric="KL",
+        batch_size=1,
+        periods=10,
+        lag_size=100,
+        step=1,
+        n_epochs=1,
+        lr=0.1,
+        lam=0.,
+        optimizer="RMSprop",
+        debug=0,
+        device="cpu",
+    ):
         
         self.base_net = MLP
         self.net = None
@@ -73,8 +84,8 @@ class ChangePointDetectionOnline(object):
         self.lam = lam
         self.optimizer = optimizer
         self.debug = debug
+        self.device = torch.device(device)
         
-    
     def reference_test_predict(self, X_ref, X_test):
         
         y_ref = np.zeros(len(X_ref))
@@ -82,22 +93,19 @@ class ChangePointDetectionOnline(object):
         X = np.vstack((X_ref, X_test))
         y = np.hstack((y_ref, y_test))
             
-        X = torch.from_numpy(X).float()
-        y = torch.from_numpy(y).float()
+        X = torch.from_numpy(X).float().to(self.device)
+        y = torch.from_numpy(y).float().to(self.device)
         
         self.net.train(False)
         n_last = min(self.batch_size, self.step)
-        ref_preds  = self.net(X[y == 0][-n_last:]).detach().numpy()
-        test_preds = self.net(X[y == 1][-n_last:]).detach().numpy()
+        ref_preds = self.net(X[y == 0][-n_last:]).detach().cpu().numpy()
+        test_preds = self.net(X[y == 1][-n_last:]).detach().cpu().numpy()
         
         self.net.train(True)
-        for epoch in range(self.n_epochs):  # loop over the dataset multiple times
-            
-            # forward + backward + optimize
+        for epoch in range(self.n_epochs):
             outputs = self.net(X)
             loss = self.criterion(outputs.squeeze(), y)
             
-            # set gradients to zero
             self.opt.zero_grad()
             loss.backward()
             self.opt.step()
@@ -119,28 +127,28 @@ class ChangePointDetectionOnline(object):
             
         return score
     
-    
     def reference_test(self, X):
         N = self.lag_size
         ws = self.batch_size
         T = []
         reference = []
         test = []
-        for i in range(2*ws+N-1, len(X), self.step):
+        for i in range(2 * ws + N - 1, len(X), self.step):
             T.append(i)
-            #print("ref : {} to {}".format(i-2*ws-N+1, i-ws-N+1))
-            #print("test : {} to {}".format(i-ws+1, i+1))
-            reference.append(X[i-2*ws-N+1:i-ws-N+1])
-            test.append(X[i-ws+1:i+1])
+            reference.append(X[i - 2 * ws - N + 1:i - ws - N + 1])
+            test.append(X[i - ws + 1:i + 1])
         return np.array(T), np.array(reference), np.array(test)
-    
     
     def predict(self, hidden_dims, X, distance=5, height=None, smooth=False):
         
         X_auto = autoregression_matrix(X, periods=self.periods, fill_value=0)
         T, reference, test = self.reference_test(X_auto)
 
-        self.net = self.base_net(input_dim=X_auto.shape[1], hidden_dims=hidden_dims, output_dim=1)
+        self.net = self.base_net(
+            input_dim=X_auto.shape[1],
+            hidden_dims=hidden_dims,
+            output_dim=1
+        ).to(self.device)
 
         self.criterion = nn.BCELoss()
         if self.optimizer == "Adam":
@@ -150,26 +158,33 @@ class ChangePointDetectionOnline(object):
         elif self.optimizer == "RMSprop":
             self.opt = torch.optim.RMSprop(self.net.parameters(), lr=self.lr, weight_decay=self.lam)
         elif self.optimizer == "ASGD":
-            self.opt = optim.ASGD(self.net.parameters(), lr=self.lr, lambd=0.0, alpha=0.75, t0=0.0, weight_decay=self.lam)
+            self.opt = optim.ASGD(
+                self.net.parameters(),
+                lr=self.lr,
+                lambd=0.0,
+                alpha=0.75,
+                t0=0.0,
+                weight_decay=self.lam
+            )
         else:
-            self.opt = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.lam)
+            self.opt = torch.optim.Adam(self.net.parameters(), lr=self.lr, weight_decay=self.lam)
         
         scores = [self.reference_test_predict(reference[i], test[i]) for i in range(len(reference))]
         T_scores = np.array([T[i] for i in range(len(reference))])
         
         T = np.arange(len(X))
-        scores = unified_score(T, T_scores-self.step, scores)
+        scores = unified_score(T, T_scores - self.step, scores)
         
-        scores = SMA(scores, self.lag_size+self.batch_size)
+        scores = SMA(scores, self.lag_size + self.batch_size)
         
         shift = self.lag_size + self.batch_size
-        scores = unified_score(T, T-shift, scores)
+        scores = unified_score(T, T - shift, scores)
         
         if smooth:
             width = int((np.round(0.25 * self.lag_size) // 2) * 2 + 1)
             scores = savgol_filter(scores, width, 1)
         
-        width = 0.25 * (self.lag_size+self.batch_size)
+        width = 0.25 * (self.lag_size + self.batch_size)
         peaks, _ = find_peaks(scores, distance=distance, width=width, height=height)
         
         return np.array(scores), peaks
