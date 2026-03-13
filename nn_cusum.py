@@ -138,7 +138,7 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
 
 
 def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window, batch_size, learning_rate, reset,
-                   use_tr_only=False, use_Xte_window=False):
+                         use_tr_only=False, use_Xte_window=False, device="cpu"):
     
     # training window parameters
     maxT, dim = arrival_Y.shape
@@ -155,7 +155,7 @@ def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_
     X_te = pilot_X[samplex_random_idx[nX_tr:nX_tr+nX_te] ,:] # test
     
     # init model
-    model = MLP(dim, hidden_dims, 1)
+    model = MLP(dim, hidden_dims, 1).to(device)
     model_init_params = copy.deepcopy(model.state_dict())
 
     # optimization parameter
@@ -192,7 +192,7 @@ def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_
         miniX_tr = X_tr[(np.mod(range(i,i+half_stride),nX_tr)),:] #loope over X_tr
         miniY_tr = arrival_Y[i:i+half_stride,:] 
         # hit the model with minibatch of training samples
-        train_miniwindow(miniX_tr, miniY_tr, model, optimizer)
+        train_miniwindow(miniX_tr, miniY_tr, model, optimizer, device)
 
         # update training window
         if wtr_len < tr_window/2:
@@ -208,7 +208,7 @@ def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_
                 Ytr_exist = np.concatenate((dataY_wtr[:wtr_len,:], dataY_wtr_lag[:wtr_lag_len]),axis=0)
             if Xtr_exist.shape[0] > 0:
                 train_loop_count += 1
-                train_loop(Xtr_exist, Ytr_exist, model, optimizer, batch_size)  
+                train_loop(Xtr_exist, Ytr_exist, model, optimizer, batch_size, device)  
             #train loop over the exising training stack, including training window and lag training window
             # shift and update training window
             shift_window_update(dataX_wtr,miniX_tr)
@@ -232,14 +232,14 @@ def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_
         # deploy the model on the test window
         with torch.no_grad():
             dataY_te=dataY_wte[:wte_len,:]
-            uY = model(torch.tensor(dataY_te))
+            uY = model(torch.tensor(dataY_te).to(device))
             uYmean = uY.reshape(-1).numpy().mean()
             mYt[i+stride-1] = uYmean
             if use_Xte_window:
                 dataX_te=dataX_wte[:wte_len,:]
             else:
                 dataX_te= X_te #though data is the same X_te, the model differs, recompute uX each step
-            uX = model(torch.tensor(dataX_te)) 
+            uX = model(torch.tensor(dataX_te).to(device)) 
             uXmean = uX.reshape(-1).numpy().mean()
             mXt[i+stride-1] = uXmean
 
@@ -266,6 +266,7 @@ def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_
     print("train_loop_count: {}".format(train_loop_count))
     return idx, Wt, dWt, model, mXt, mYt
 
+
 def shift_window_update(window, batch_data):
     win_len=window.shape[0]
     batch_len=batch_data.shape[0]
@@ -273,11 +274,13 @@ def shift_window_update(window, batch_data):
     window[:win_len-batch_len,:]=window[batch_len:win_len,:]
     window[win_len-batch_len:,:]=batch_data
 
+
 def augment_window_update(window, cur_len, batch_data):
     batch_len=batch_data.shape[0]
     window[cur_len:cur_len+batch_len,:] = batch_data
 
-def train_loop(X_tr, Y_tr, model, optimizer, batch_size):
+
+def train_loop(X_tr, Y_tr, model, optimizer, batch_size, device):
     nX, dim = X_tr.shape
     #nY = Y_tr.shape[0] #assume nX=nY
     num_batch = int(nX/batch_size)
@@ -297,7 +300,7 @@ def train_loop(X_tr, Y_tr, model, optimizer, batch_size):
         # train the model
         optimizer.zero_grad()
         # forward pass
-        uxb = model(data_batch)#at least 2 samples, one from X, one from Y
+        uxb = model(data_batch.to(device))#at least 2 samples, one from X, one from Y
         outputs = torch.cat( (-uxb/2, uxb/2),1)
         pred = F.log_softmax(outputs, dim=1)
         loss = F.nll_loss( pred, labels_batch, reduction='sum')
@@ -308,14 +311,14 @@ def train_loop(X_tr, Y_tr, model, optimizer, batch_size):
     return train_loss/nX
 
 
-def train_miniwindow(miniX, miniY, model, optimizer):
+def train_miniwindow(miniX, miniY, model, optimizer, device):
     mini_size,dim = miniX.shape
     data_batch = torch.tensor( np.concatenate( (miniX,miniY ), axis=0) )
     labels_batch = torch.tensor(np.concatenate((np.zeros(mini_size),np.ones(mini_size)), axis=0), dtype=int)
     # train the model
     optimizer.zero_grad()
     # forward pass
-    uxb = model(data_batch)#at least 2 samples, one from X, one from Y
+    uxb = model(data_batch.to(device))#at least 2 samples, one from X, one from Y
     outputs = torch.cat( (-uxb/2, uxb/2),1)
     pred = F.log_softmax(outputs, dim=1)
     loss = F.nll_loss( pred, labels_batch, reduction='sum')
@@ -330,7 +333,7 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
                                             batch_size: int, learning_rate: float, 
                                             f0_length: int, f1_length: int, burnin_length: int, 
                                             f0_sequence, f1_sequence,
-                                            iter_num: int, save_dir: str):
+                                            iter_num: int, save_dir: str, device: str):
     
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
@@ -362,7 +365,8 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
         
         idxt_nn, Wt_nn, dWt_nn, model, mXt_nn, mYt_nn = test_statistic_reset(hidden_dims, x, y, stride, 
                                                                              window_size, window_size, batch_size, 
-                                                                             learning_rate, [burnin_length, f0_with_burnin_length])
+                                                                             learning_rate, [burnin_length, f0_with_burnin_length],
+                                                                             device)
             
         if burnin_length != 0:
             idxt_nn = idxt_nn[:-int(burnin_length/stride)]
