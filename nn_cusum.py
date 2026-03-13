@@ -377,7 +377,8 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
     print("saving results...")
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, 
-                         "nncusum_iter{}_pre{}_post{}_b{}_s{}_w{}".format(iter_num, f0_length, f1_length, 
-                                                                       burnin_length, stride, window_size)),
-                                                                       stat_record)
+                         "nncusum_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}".format(iter_num, f0_length, f1_length, burnin_length, 
+                                                                          hidden_dims[0], len(hidden_dims),
+                                                                          stride, window_size)),
+                                                                          stat_record)
     
