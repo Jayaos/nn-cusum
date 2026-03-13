@@ -58,13 +58,27 @@ class MLP(nn.Module):
 
 class ChangePointDetectionOnline_RuLSIF(object):
     
-    def __init__(self, scaler='auto', alpha=0.1, metric="None", batch_size=1, periods=10, lag_size=100, step=1, 
-                 n_epochs=1, lr=0.1, lam=0., optimizer="RMSprop", debug=0):
+    def __init__(
+        self,
+        scaler='auto',
+        alpha=0.1,
+        metric="None",
+        batch_size=1,
+        periods=10,
+        lag_size=100,
+        step=1,
+        n_epochs=1,
+        lr=0.1,
+        lam=0.,
+        optimizer="RMSprop",
+        debug=0,
+        device="cpu",
+    ):
             
         if scaler is None:
             self.scaler = MockScaler(0)
-        if scaler == 'auto':
-            self.scaler = SmaScalerCache(lag_size + 2*batch_size)
+        elif scaler == 'auto':
+            self.scaler = SmaScalerCache(lag_size + 2 * batch_size)
         else:
             self.scaler = scaler
 
@@ -82,14 +96,29 @@ class ChangePointDetectionOnline_RuLSIF(object):
         self.lam = lam
         self.optimizer = optimizer
         self.debug = debug
+
+        if device == "cuda" and not torch.cuda.is_available():
+            print("CUDA requested but not available. Falling back to CPU.")
+            device = "cpu"
+
+        self.device = torch.device(device)
             
     def predict(self, hidden_dims, X, distance=5, height=None, smooth=False):
         
         X_auto = autoregression_matrix(X, periods=self.periods, fill_value=0)
         T, reference, test = self.reference_test(X_auto)
         
-        self.net1 = self.base_net(input_dim=X_auto.shape[1], hidden_dims=hidden_dims, output_dim=1)
-        self.net2 = self.base_net(input_dim=X_auto.shape[1], hidden_dims=hidden_dims, output_dim=1)
+        self.net1 = self.base_net(
+            input_dim=X_auto.shape[1],
+            hidden_dims=hidden_dims,
+            output_dim=1
+        ).to(self.device)
+
+        self.net2 = self.base_net(
+            input_dim=X_auto.shape[1],
+            hidden_dims=hidden_dims,
+            output_dim=1
+        ).to(self.device)
         
         self.criterion = nn.BCELoss()
         if self.optimizer == "Adam":
@@ -102,29 +131,42 @@ class ChangePointDetectionOnline_RuLSIF(object):
             self.opt1 = torch.optim.RMSprop(self.net1.parameters(), lr=self.lr, weight_decay=self.lam)
             self.opt2 = torch.optim.RMSprop(self.net2.parameters(), lr=self.lr, weight_decay=self.lam)
         elif self.optimizer == "ASGD":
-            self.opt1 = optim.ASGD(self.net1.parameters(), lr=self.lr, lambd=0.0, alpha=0.75, t0=0.0, weight_decay=self.lam)
-            self.opt2 = optim.ASGD(self.net2.parameters(), lr=self.lr, lambd=0.0, alpha=0.75, t0=0.0, weight_decay=self.lam)
+            self.opt1 = optim.ASGD(
+                self.net1.parameters(),
+                lr=self.lr,
+                lambd=0.0,
+                alpha=0.75,
+                t0=0.0,
+                weight_decay=self.lam
+            )
+            self.opt2 = optim.ASGD(
+                self.net2.parameters(),
+                lr=self.lr,
+                lambd=0.0,
+                alpha=0.75,
+                t0=0.0,
+                weight_decay=self.lam
+            )
         else:
-            self.opt1 = torch.optim.Adam(self.model1.parameters(), lr=self.lr, weight_decay=self.lam)
-            self.opt2 = torch.optim.Adam(self.model2.parameters(), lr=self.lr, weight_decay=self.lam)
-        
+            self.opt1 = torch.optim.Adam(self.net1.parameters(), lr=self.lr, weight_decay=self.lam)
+            self.opt2 = torch.optim.Adam(self.net2.parameters(), lr=self.lr, weight_decay=self.lam)
         
         scores = [self.reference_test_predict(reference[i], test[i]) for i in range(len(reference))]
         T_scores = np.array([T[i] for i in range(len(reference))])
         
         T = np.arange(len(X))
-        scores = unified_score(T, T_scores-self.step, scores)
+        scores = unified_score(T, T_scores - self.step, scores)
         
-        scores = SMA(scores, self.lag_size+self.batch_size)
+        scores = SMA(scores, self.lag_size + self.batch_size)
         
         shift = self.lag_size + self.batch_size
-        scores = unified_score(T, T-shift, scores)
+        scores = unified_score(T, T - shift, scores)
         
         if smooth:
             width = int((np.round(0.25 * self.lag_size) // 2) * 2 + 1)
             scores = savgol_filter(scores, width, 1)
         
-        width = 0.25 * (self.lag_size+self.batch_size)
+        width = 0.25 * (self.lag_size + self.batch_size)
         peaks, _ = find_peaks(scores, distance=distance, width=width, height=height)
         
         return np.array(scores), peaks
@@ -138,40 +180,43 @@ class ChangePointDetectionOnline_RuLSIF(object):
         
         X = self.scaler.fit_transform(X)
         
-        X = torch.from_numpy(X).float()
-        y = torch.from_numpy(y).float()
+        X = torch.from_numpy(X).float().to(self.device)
+        y = torch.from_numpy(y).float().to(self.device)
         
         n_last = min(self.batch_size, self.step)
+
         self.net1.train(False)
-        test_preds = self.net1(X[y == 1][-n_last:]).detach().numpy()
+        test_preds = self.net1(X[y == 1][-n_last:]).detach().cpu().numpy()
         
         self.net2.train(False)
-        ref_preds  = self.net2(X[y == 0][-n_last:]).detach().numpy()
+        ref_preds = self.net2(X[y == 0][-n_last:]).detach().cpu().numpy()
         
         self.net1.train(True)
         self.net2.train(True)
-        for epoch in range(self.n_epochs):  # loop over the dataset multiple times
+        for epoch in range(self.n_epochs):
             
-            # forward + backward + optimize
             y_pred_batch = self.net1(X).squeeze()
-            y_pred_batch_ref  = y_pred_batch[y == 0]
+            y_pred_batch_ref = y_pred_batch[y == 0]
             y_pred_batch_test = y_pred_batch[y == 1]
-            loss = 0.5 * (1 - self.alpha) * (y_pred_batch_ref**2).mean() + \
-                   0.5 *      self.alpha  * (y_pred_batch_test**2).mean() - (y_pred_batch_test).mean()
+            loss = (
+                0.5 * (1 - self.alpha) * (y_pred_batch_ref ** 2).mean()
+                + 0.5 * self.alpha * (y_pred_batch_test ** 2).mean()
+                - y_pred_batch_test.mean()
+            )
             
-            # set gradients to zero
             self.opt1.zero_grad()
             loss.backward()
             self.opt1.step()
             
-            # forward + backward + optimize
             y_pred_batch = self.net2(X).squeeze()
-            y_pred_batch_ref  = y_pred_batch[y == 1]
+            y_pred_batch_ref = y_pred_batch[y == 1]
             y_pred_batch_test = y_pred_batch[y == 0]
-            loss = 0.5 * (1 - self.alpha) * (y_pred_batch_ref**2).mean() + \
-                   0.5 *      self.alpha  * (y_pred_batch_test**2).mean() - (y_pred_batch_test).mean()
+            loss = (
+                0.5 * (1 - self.alpha) * (y_pred_batch_ref ** 2).mean()
+                + 0.5 * self.alpha * (y_pred_batch_test ** 2).mean()
+                - y_pred_batch_test.mean()
+            )
             
-            # set gradients to zero
             self.opt2.zero_grad()
             loss.backward()
             self.opt2.step()
@@ -186,8 +231,8 @@ class ChangePointDetectionOnline_RuLSIF(object):
         T = []
         reference = []
         test = []
-        for i in range(2*ws+N-1, len(X), self.step):
+        for i in range(2 * ws + N - 1, len(X), self.step):
             T.append(i)
-            reference.append(X[i-2*ws-N+1:i-ws-N+1])
-            test.append(X[i-ws+1:i+1])
+            reference.append(X[i - 2 * ws - N + 1:i - ws - N + 1])
+            test.append(X[i - ws + 1:i + 1])
         return np.array(T), np.array(reference), np.array(test)

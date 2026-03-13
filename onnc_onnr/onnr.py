@@ -9,7 +9,7 @@ def run_onnr(hidden_dims: list, window_size: int, stride: int, lag_size: int,
                                             learning_rate: float, epoch: int,
                                             f0_length: int, f1_length: int, 
                                             f0_sequence, f1_sequence,
-                                            iter_num: int, save_dir: str):
+                                            iter_num: int, save_dir: str, device: str):
     
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
@@ -37,7 +37,7 @@ def run_onnr(hidden_dims: list, window_size: int, stride: int, lag_size: int,
         
         reg = ChangePointDetectionOnline_RuLSIF(metric="None", alpha=0.1, periods=1, 
                                                 batch_size=window_size, lag_size=lag_size, step=stride, n_epochs=epoch, 
-                                                lr=learning_rate, lam=0.0, optimizer="Adam")
+                                                lr=learning_rate, lam=0.0, optimizer="Adam", device=device)
         
         sequence = np.concatenate([x_chunk, y_chunk])
         score_clf, peaks_clf = reg.predict(hidden_dims, sequence, height=1, smooth=False)   
