@@ -46,7 +46,7 @@ def run_onnr(hidden_dims: list, window_size: int, stride: int, lag_size: int,
     print("saving results...")
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, 
-                         "onnr_iter{}_f0{}_f1{}_s{}_w{}_e{}".format(iter_num, f0_length, f1_length, 
+                         "onnr_iter{}_pre{}_post{}_s{}_w{}_e{}".format(iter_num, f0_length, f1_length, 
                                                                        stride, window_size, epoch)),
                                                                        stat_record)
     
