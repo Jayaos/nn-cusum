@@ -3,6 +3,7 @@ import random
 import copy
 import torch
 import os
+from tqdm import tqdm
 from torch.nn import functional as F
 from model import MLP
 from utils.data import augment_sequence_with_replacement
@@ -354,7 +355,7 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
         print("current f1 sequence length: {}, required length: {}".format(f1_sequence.shape[0], iter_num*f1_chunk_size))
         f1_sequence = augment_sequence_with_replacement(f1_sequence, iter_num*f1_chunk_size)
     
-    for i in range(iter_num):
+    for i in tqdm(range(iter_num)):
 
         print("iter {}".format(i+1))
         x_chunk = f0_sequence[i*f0_chunk_size:(i+1)*f0_chunk_size,:]
