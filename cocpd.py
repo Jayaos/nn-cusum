@@ -9,24 +9,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from model import MLP
+from utils.data import augment_sequence_with_replacement
 
 
-class NN(nn.Module):
-    def __init__(self, n_in, n_hidden, n_out):
-        
-        super(NN, self).__init__()
-        
-        self.net = torch.nn.Sequential(
-            torch.nn.Linear(n_in, n_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(n_hidden, n_out)
-        )
-    
-    def forward(self, x):
-        
-        return self.net(x)
-    
-def nn_cocpd_test_statistic(X, dim_hidden, stride, t_min=20, n_out_min=10, delta_max=50, n_epochs=1, learning_rate=0.01):
+def get_cocpd_statistics(X, hidden_dims, stride, t_min=20, n_out_min=10, delta_max=50, 
+                         n_epochs=1, learning_rate=0.01, device="cpu"):
     
     # X = X.reshape(-1, 1)
     # t_min: time t to start
@@ -42,7 +30,7 @@ def nn_cocpd_test_statistic(X, dim_hidden, stride, t_min=20, n_out_min=10, delta
         for tau in range(np.maximum(t - n_out_min - delta_max, n_out_min), t-n_out_min):
             
             # Initialize neural network
-            f = NN(n_in=dim_input, n_hidden=dim_hidden, n_out=1)
+            f = MLP(dim_input, hidden_dims, 1).to(device)
             
             # Parameters of the optimizer
             opt = torch.optim.Adam(f.parameters(), lr=learning_rate)
@@ -87,25 +75,37 @@ def nn_cocpd_test_statistic(X, dim_hidden, stride, t_min=20, n_out_min=10, delta
     
     return S, T
 
-def get_nn_cocpd_stat_record_sequence_based(saving_dir, iter_num, pilot_size, online_size, pilot_sequence, online_sequence,
-                                            stride, window_size, learning_rate, epoch):
-    
-    stat_record = np.zeros(shape=(iter_num, pilot_size+online_size))
 
-    x_chunk_size = pilot_size
-    y_chunk_size = online_size
+def run_cocpd(hidden_dims: list, window_size: int, stride: int, learning_rate: float,
+              f0_length: int, f1_length: int, f0_sequence, f1_sequence, 
+              iter_num: int, save_dir: str, device: str):
+        
+    # reference sequence: (f0_length + f1_length) construced from f0_sequence
+    # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
+    entire_sequence_len = f0_length + f1_length
+    f0_chunk_size = 2*f0_length+f1_length 
+    f1_chunk_size = f1_length
     
-    assert pilot_sequence.shape[0] >= iter_num * x_chunk_size, "x do not have enough data"
-    assert online_sequence.shape[0] >= iter_num * y_chunk_size, "y do not have enough data"
+    stat_record = np.zeros(shape=(iter_num, entire_sequence_len))
+
+    if f0_sequence.shape[0] < iter_num*f0_chunk_size:
+        print("f0 sequence do not have enough data")
+        print("current f0 sequence length: {}, required length: {}".format(f0_sequence.shape[0], iter_num*f0_chunk_size))
+        f0_sequence = augment_sequence_with_replacement(f0_sequence, iter_num*f0_chunk_size)
+
+    if f1_sequence.shape[0] < iter_num * f1_chunk_size:
+        print("f1 sequence do not have enough data")
+        print("current f1 sequence length: {}, required length: {}".format(f1_sequence.shape[0], iter_num*f1_chunk_size))
+        f1_sequence = augment_sequence_with_replacement(f1_sequence, iter_num*f1_chunk_size)
     
     for i in tqdm(range(iter_num)):
         
-        x_chunk = pilot_sequence[i*x_chunk_size:(i+1)*x_chunk_size,:]
-        y_chunk = online_sequence[i*y_chunk_size:(i+1)*y_chunk_size,:]
+        x_chunk = f0_sequence[i*f0_chunk_size:(i+1)*f0_chunk_size,:]
+        y_chunk = f1_sequence[i*f1_chunk_size:(i+1)*f1_chunk_size,:]
 
         sequence = np.concatenate([x_chunk, y_chunk])
         
-        detection_statistics, _ = nn_cocpd_test_statistic(sequence, dim_hidden=64, stride=stride, t_min=20, n_out_min=10, 
+        detection_statistics, _ = get_cocpd_statistics(sequence, dim_hidden=64, stride=stride, t_min=20, n_out_min=10, 
                                                           delta_max=window_size, n_epochs=epoch, 
                                                           learning_rate=learning_rate)
         

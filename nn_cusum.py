@@ -331,10 +331,10 @@ def train_miniwindow(miniX, miniY, model, optimizer, device):
 
 
 def run_nncusum(hidden_dims: list, window_size: int, stride: int, 
-                                            batch_size: int, learning_rate: float, 
-                                            f0_length: int, f1_length: int, burnin_length: int, 
-                                            f0_sequence, f1_sequence,
-                                            iter_num: int, save_dir: str, device: str):
+                batch_size: int, learning_rate: float, 
+                f0_length: int, f1_length: int, burnin_length: int, 
+                f0_sequence, f1_sequence,
+                iter_num: int, save_dir: str, device: str):
     
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
@@ -357,7 +357,6 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
     
     for i in tqdm(range(iter_num)):
 
-        print("iter {}".format(i+1))
         x_chunk = f0_sequence[i*f0_chunk_size:(i+1)*f0_chunk_size,:]
         y_chunk = f1_sequence[i*f1_chunk_size:(i+1)*f1_chunk_size,:]
 
