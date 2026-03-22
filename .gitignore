@@ -1,5 +1,6 @@
 data/
 notebooks/
 papers/
+online_kernel_cusum/
 AGENTS.md
 *.pyc
