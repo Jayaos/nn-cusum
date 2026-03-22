@@ -22,7 +22,7 @@ def train_onnc_batch(batch_x, batch_y, model, loss_fn, optimizer, epoch, device)
 
     for e in range(epoch):
         optimizer.zero_grad()
-        outputs = model(batch_data, torch.sigmoid()) 
+        outputs = model(batch_data, torch.sigmoid) 
         outputs = outputs.reshape(-1)
         loss = loss_fn(outputs, labels_batch)
         loss.backward()
@@ -41,8 +41,8 @@ def test_onnc_batch(batch_x, batch_y, model, device):
     model.eval()
     with torch.no_grad():
         
-        output_x = model(batch_x.to(device), torch.sigmoid())
-        output_y = model(batch_y.to(device), torch.sigmoid())
+        output_x = model(batch_x.to(device), torch.sigmoid)
+        output_y = model(batch_y.to(device), torch.sigmoid)
         output_x = torch.clip(output_x, min=eps, max=1-eps) # why clip here?
         output_y = torch.clip(output_y, min=eps, max=1-eps) # why clip here?
         kld_score = ((1-output_x) / output_x).log10().mean() + (output_y / (1-output_y)).log10().mean()
@@ -82,8 +82,8 @@ def onnc_statistic(hidden_dims, pilot_X, arrival_Y, stride, window_size, learnin
 
         x_batch = torch.Tensor(x_batch)
         y_batch = torch.Tensor(y_batch)
-        loss = train_onnc_batch(x_batch, y_batch, model, nn.BCELoss(), optimizer, epoch)
-        onnc_stat = test_onnc_batch(x_batch, y_batch, model=model)
+        loss = train_onnc_batch(x_batch, y_batch, model, nn.BCELoss(), optimizer, epoch, device=device)
+        onnc_stat = test_onnc_batch(x_batch, y_batch, model=model, device=device)
 
         loss_record[(i+1)*stride-1] = loss
         wt[(i+1)*stride-1] = onnc_stat
@@ -95,7 +95,6 @@ def run_onnc(hidden_dims: list, window_size: int, stride: int, learning_rate: fl
              f0_length: int, f1_length: int, burnin_length: int, 
              f0_sequence, f1_sequence, iter_num: int, save_dir: str, device: str):
              
-
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
     entire_sequence_len = f0_length + f1_length
@@ -122,11 +121,8 @@ def run_onnc(hidden_dims: list, window_size: int, stride: int, learning_rate: fl
 
         y = np.float32(np.concatenate([x_chunk[:f0_with_burnin_length], y_chunk]))
         x = np.float32(x_chunk[f0_with_burnin_length:])
-        
-        Wt_h, loss_record = onnc_statistic(hidden_dims, x, y, stride, 
-                                           window_size, learning_rate, epoch,
-                                           learning_rate, [burnin_length, f0_with_burnin_length],
-                                           device)
+
+        Wt_h, loss_record = onnc_statistic(hidden_dims, x, y, stride, window_size, learning_rate, epoch, device)
         stat_record[i,:] = Wt_h[burnin_length:]
 
     print("saving results...")
