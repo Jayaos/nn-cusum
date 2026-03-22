@@ -34,8 +34,12 @@ class MLP(nn.Module):
         else:
             raise ValueError(f"Unknown activation: {self.activation_name}")
 
-    def forward(self, x):
+    def forward(self, x, last_activation=None):
         for layer in self.layers[:-1]:
             x = self._act(layer(x))
         x = self.layers[-1](x)
-        return x
+
+        if last_activation:
+            return last_activation(x)
+        else:
+            return x

@@ -9,137 +9,8 @@ from model import MLP
 from utils.data import augment_sequence_with_replacement
 
 
-def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window, batch_size, learning_rate,
-                   use_tr_only=False, use_Xte_window=False):
-
-    # training window parameters
-    maxT, dim = arrival_Y.shape
-    half_stride = int(stride/2)
-    n_fold_tr = int(tr_window/stride) 
-    n_fold_te = int(te_window/stride) #number of subwindows in test window
-    
-    # pilotX, random split training set (to arrive) and test set
-    nXpool=pilot_X.shape[0]
-    nX_te = int(te_window/2) #effective test window size
-    nX_tr = nXpool-nX_te
-    samplex_random_idx = random.sample(range(nXpool), nXpool ) 
-    X_tr = pilot_X[samplex_random_idx[:nX_tr],:] # train
-    X_te = pilot_X[samplex_random_idx[nX_tr:nX_tr+nX_te] ,:] # test
-    
-    # init model
-    model = MLP(dim, hidden_dims, 1)
-    model_init_params = copy.deepcopy(model.state_dict())
-
-    # optimization parameter
-    print("learning rate: {}".format(learning_rate))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)    
-    
-    #storage of training statistics, average on testing window
-    mXt, mYt = np.zeros(maxT), np.zeros(maxT) #window averaged test statistic
-    Wprevr =0
-    dWt, Wt = np.zeros(maxT), np.zeros(maxT) #CUSUM
-
-    model.train()
-    model.load_state_dict(model_init_params)
-
-    # tr_window and tr_window_lag
-    wtr_len = 0 #the record of window len 
-    dataX_wtr = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
-    dataY_wtr = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
-
-    wtr_lag_len =0
-    dataX_wtr_lag = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
-    dataY_wtr_lag = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
-
-    wte_len = 0
-    dataX_wte = np.float32( np.zeros( (n_fold_te*half_stride,dim) ))
-    dataY_wte = np.float32( np.zeros( (n_fold_te*half_stride,dim) )) 
-    #not used for testing, just go together with Yte_window
-
-    i= 0 #index of actual time
-    train_loop_count = 0
-
-    while i <= maxT-stride:
-        # load the train split of minibatch of data
-        # loope over X_tr
-        miniX_tr = X_tr[(np.mod(range(i,i+half_stride), nX_tr)),:] 
-        miniY_tr = arrival_Y[i:i+half_stride,:] 
-        # hit the model with minibatch of training samples
-        train_miniwindow(miniX_tr, miniY_tr, model, optimizer)
-
-        # update training window
-        if wtr_len < tr_window/2:
-            augment_window_update(dataX_wtr, wtr_len, miniX_tr)
-            augment_window_update(dataY_wtr, wtr_len, miniX_tr)
-            wtr_len=wtr_len+half_stride
-        else: #training window is full
-            if use_tr_only:
-                Xtr_exist = dataX_wtr[:wtr_len,:]
-                Ytr_exist = dataY_wtr[:wtr_len,:]
-            else:
-                Xtr_exist = np.concatenate((dataX_wtr[:wtr_len,:], dataX_wtr_lag[:wtr_lag_len]),axis=0)
-                Ytr_exist = np.concatenate((dataY_wtr[:wtr_len,:], dataY_wtr_lag[:wtr_lag_len]),axis=0)
-            if Xtr_exist.shape[0] > 0:
-                train_loop_count += 1
-                train_loop(Xtr_exist, Ytr_exist, model, optimizer, batch_size)  
-            #train loop over the exising training stack, including training window and lag training window
-            # shift and update training window
-            shift_window_update(dataX_wtr,miniX_tr)
-            shift_window_update(dataY_wtr,miniY_tr)
-
-        #load the test split of minibatch of data
-        miniX_te =X_tr[(np.mod(range(i+half_stride,i+stride),nX_tr)),:]
-        miniY_te =arrival_Y[i+half_stride:i+stride,:]
-    
-        # update test window
-        if wte_len < te_window/2:
-            # put into test window
-            augment_window_update(dataX_wte, wte_len, miniX_te)
-            augment_window_update(dataY_wte, wte_len, miniY_te)
-            wte_len=wte_len+half_stride
-        else: #if a test window is full  
-            # shift a stride fwd of test sindow
-            shift_window_update(dataX_wte,miniX_te)
-            shift_window_update(dataY_wte,miniY_te)
-
-        # deploy the model on the test window
-        with torch.no_grad():
-            dataY_te=dataY_wte[:wte_len,:]
-            uY = model(torch.tensor(dataY_te))
-            uYmean = uY.reshape(-1).numpy().mean()
-            mYt[i+stride-1] = uYmean
-            if use_Xte_window:
-                dataX_te=dataX_wte[:wte_len,:]
-            else:
-                dataX_te= X_te #though data is the same X_te, the model differs, recompute uX each step
-            uX = model(torch.tensor(dataX_te)) 
-            uXmean = uX.reshape(-1).numpy().mean()
-            mXt[i+stride-1] = uXmean
-
-        # recursive CUSUM
-        eta_stride = uYmean-uXmean
-        dWt[i+stride-1] = eta_stride
-        Wt[i+stride-1] =  max(0, eta_stride+Wprevr)
-        Wprevr = Wt[i+stride-1]
-    
-        #scrable Xtr when one pass is done
-        if np.mod(i, nX_tr) < stride:
-            X_tr = X_tr[random.sample(range(nX_tr),nX_tr ),:]
-        
-        #increase the batch index, and sample index i    
-        i = i+stride
-    
-    idx = range(stride-1, maxT, stride) 
-    Wt = Wt[idx]
-    dWt = dWt[idx]
-    mXt = mXt[idx]
-    mYt = mYt[idx]
-    print("train_loop_count: {}".format(train_loop_count))
-    return idx, Wt, dWt, model, mXt, mYt
-
-
-def test_statistic_reset(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window, batch_size, learning_rate, reset,
-                         use_tr_only=False, use_Xte_window=False, device="cpu"):
+def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window, batch_size, learning_rate, reset,
+                   use_tr_only=False, use_Xte_window=False, device="cpu"):
     
     # training window parameters
     maxT, dim = arrival_Y.shape
@@ -363,10 +234,10 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
         y = np.float32(np.concatenate([x_chunk[:f0_with_burnin_length], y_chunk]))
         x = np.float32(x_chunk[f0_with_burnin_length:])
         
-        idxt_nn, Wt_nn, dWt_nn, model, mXt_nn, mYt_nn = test_statistic_reset(hidden_dims, x, y, stride, 
-                                                                             window_size, window_size, batch_size, 
-                                                                             learning_rate, [burnin_length, f0_with_burnin_length],
-                                                                             device)
+        idxt_nn, Wt_nn, dWt_nn, model, mXt_nn, mYt_nn = test_statistic(hidden_dims, x, y, stride, 
+                                                                       window_size, window_size, batch_size, 
+                                                                       learning_rate, [burnin_length, f0_with_burnin_length],
+                                                                       device)
             
         if burnin_length != 0:
             idxt_nn = idxt_nn[:-int(burnin_length/stride)]
