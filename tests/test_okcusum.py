@@ -3,6 +3,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 from okcusum import median_heuristic_bandwidth, online_kernel_cusum_statistic
 
@@ -97,7 +98,7 @@ def compute_h0_maxima(
     scanb_max = np.zeros(num_trials, dtype=np.float64)
     omega_B = np.arange(2, window_size + 1, dtype=int)
 
-    for trial_idx in range(num_trials):
+    for trial_idx in tqdm(range(num_trials), desc="H0 calibration trials"):
         post_change_sample = rng.normal(
             loc=0.0,
             scale=1.0,
@@ -135,7 +136,7 @@ def compute_h1_statistics(
     okcusum_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
     scanb_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
 
-    for trial_idx in range(num_trials):
+    for trial_idx in tqdm(range(num_trials), desc="H1 EDD trials"):
         post_change_sample = sample_post_change_mixture(
             rng=rng,
             sample_size=sample_size,
