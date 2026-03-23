@@ -13,7 +13,6 @@ def parse_args():
 
     p = argparse.ArgumentParser()
 
-    # data / problem
     p.add_argument("--save_dir", type=str, default="./results/")
     p.add_argument("--dataset_type", type=str, default="higgs_all")
     p.add_argument("--dataset_dir", type=str, default="./data/")
