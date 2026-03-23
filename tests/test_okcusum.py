@@ -192,6 +192,14 @@ def _run_h1_batch(batch_start: int, batch_size: int, seed: int) -> tuple[int, np
     return batch_start, okcusum_stats, scanb_stats
 
 
+def _H0_TASK_WRAPPER(task: tuple[int, int, int]) -> tuple[int, np.ndarray, np.ndarray]:
+    return _run_h0_batch(*task)
+
+
+def _H1_TASK_WRAPPER(task: tuple[int, int, int]) -> tuple[int, np.ndarray, np.ndarray]:
+    return _run_h1_batch(*task)
+
+
 def _run_batches_in_pool(
     tasks: list[tuple[int, int, int]],
     worker_fn,
@@ -210,9 +218,15 @@ def _run_batches_in_pool(
     start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
     ctx = mp.get_context(start_method)
     with ctx.Pool(processes=num_workers, initializer=init_fn, initargs=init_args) as pool:
-        iterator = pool.starmap(worker_fn, tasks)
         results = []
-        for result in tqdm(iterator, total=len(tasks), desc=desc):
+        for result in tqdm(
+            pool.imap_unordered(
+                _H0_TASK_WRAPPER if worker_fn is _run_h0_batch else _H1_TASK_WRAPPER,
+                tasks,
+            ),
+            total=len(tasks),
+            desc=desc,
+        ):
             results.append(result)
     return results
 
