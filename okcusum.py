@@ -27,7 +27,7 @@ def median_heuristic_bandwidth(samples: np.ndarray) -> float:
     positive_dist2 = dist2[dist2 > 0]
     if positive_dist2.size == 0:
         raise ValueError("median heuristic requires at least two distinct samples")
-    return float(np.median(positive_dist2))
+    return float(np.median(np.sqrt(positive_dist2)))
 
 
 def h_rbf(x1: np.ndarray, x2: np.ndarray, y1: np.ndarray, y2: np.ndarray, bandwidth: float) -> float:
