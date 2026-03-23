@@ -1,11 +1,9 @@
-from __future__ import annotations
-
-from typing import Iterable
+from typing import Dict, Iterable, Optional, Union
 
 import numpy as np
 
 
-def eu_dist2(x: np.ndarray, y: np.ndarray | None = None) -> np.ndarray:
+def eu_dist2(x: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:
     x = np.asarray(x, dtype=np.float64)
     y = x if y is None else np.asarray(y, dtype=np.float64)
     x_norm = np.sum(x * x, axis=1)[:, None]
@@ -123,7 +121,7 @@ def prepare_reference(
     omega_B: Iterable[int],
     num_blocks: int,
     kernel_bandwidth: float,
-) -> dict[str, np.ndarray | float | int]:
+) -> Dict[str, Union[np.ndarray, float, int]]:
     omega_B = normalize_omega_B(omega_B)
     if num_blocks <= 0:
         raise ValueError("num_blocks must be positive")
@@ -165,7 +163,7 @@ def online_kernel_cusum_statistic(
     omega_B: Iterable[int],
     num_blocks: int,
     kernel_bandwidth: float,
-    prepared_reference: dict[str, np.ndarray | float | int] | None = None,
+    prepared_reference: Optional[Dict[str, Union[np.ndarray, float, int]]] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     if prepared_reference is None:
         prepared_reference = prepare_reference(
@@ -273,7 +271,7 @@ def kcusum_statistic(
     post_change_sample: np.ndarray,
     kernel_bandwidth: float,
     delta: float = 1.0 / 50.0,
-    rng: np.random.Generator | None = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> np.ndarray:
     pre_change_sample = np.asarray(pre_change_sample, dtype=np.float64)
     post_change_sample = np.asarray(post_change_sample, dtype=np.float64)

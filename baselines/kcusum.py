@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import os
 from tqdm import tqdm
@@ -22,7 +24,7 @@ def run_kcusum(f0_length: int, f1_length: int,
                iter_num: int, save_dir: str,
                delta: float = 1.0 / 50.0,
                kernel_bandwidth=None,
-               random_seed: int | None = None):
+               random_seed: Optional[int] = None):
 
     entire_sequence_len = f0_length + f1_length
     f0_chunk_size = 2 * f0_length + f1_length
