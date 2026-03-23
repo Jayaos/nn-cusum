@@ -10,7 +10,7 @@ from utils.data import augment_sequence_with_replacement
 
 
 def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window, batch_size, learning_rate, reset,
-                   use_tr_only=False, use_Xte_window=False, device="cpu"):
+                   use_tr_only=False, use_Xte_window=True, device="cpu"):
     
     # training window parameters
     maxT, dim = arrival_Y.shape
@@ -69,7 +69,7 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
         # update training window
         if wtr_len < tr_window/2:
             augment_window_update(dataX_wtr, wtr_len, miniX_tr)
-            augment_window_update(dataY_wtr, wtr_len, miniX_tr)
+            augment_window_update(dataY_wtr, wtr_len, miniY_tr)
             wtr_len=wtr_len+half_stride
         else: #training window is full
             if use_tr_only:
@@ -96,7 +96,17 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
             augment_window_update(dataX_wte, wte_len, miniX_te)
             augment_window_update(dataY_wte, wte_len, miniY_te)
             wte_len=wte_len+half_stride
-        else: #if a test window is full  
+        else: #if a test window is full
+            # augment the training lag windo
+            ##### !!!!!!!!!!!
+            if wtr_lag_len < tr_window/2:
+                augment_window_update(dataX_wtr_lag, wtr_lag_len, dataX_wte[0:half_stride,:])
+                augment_window_update(dataY_wtr_lag, wtr_lag_len, dataY_wte[0:half_stride,:])
+                wtr_lag_len=wtr_lag_len+half_stride
+            else:
+                # shift a stride fwd in the training lag window
+                shift_window_update(dataX_wtr_lag,dataX_wte[0:half_stride,:])
+                shift_window_update(dataY_wtr_lag,dataY_wte[0:half_stride,:])         
             # shift a stride fwd of test sindow
             shift_window_update(dataX_wte,miniX_te)
             shift_window_update(dataY_wte,miniY_te)
@@ -135,7 +145,6 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
     dWt = dWt[idx]
     mXt = mXt[idx]
     mYt = mYt[idx]
-    print("train_loop_count: {}".format(train_loop_count))
     return idx, Wt, dWt, model, mXt, mYt
 
 
@@ -175,7 +184,7 @@ def train_loop(X_tr, Y_tr, model, optimizer, batch_size, device):
         uxb = model(data_batch.to(device))#at least 2 samples, one from X, one from Y
         outputs = torch.cat( (-uxb/2, uxb/2),1)
         pred = F.log_softmax(outputs, dim=1)
-        loss = F.nll_loss( pred, labels_batch, reduction='sum')
+        loss = F.nll_loss( pred, labels_batch, reduction='mean')
         #backward pass
         loss.backward()
         optimizer.step()
