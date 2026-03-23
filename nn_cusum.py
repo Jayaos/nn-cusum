@@ -246,7 +246,7 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
         idxt_nn, Wt_nn, dWt_nn, model, mXt_nn, mYt_nn = test_statistic(hidden_dims, x, y, stride, 
                                                                        window_size, window_size, batch_size, 
                                                                        learning_rate, [burnin_length, f0_with_burnin_length],
-                                                                       device)
+                                                                       device=device)
             
         if burnin_length != 0:
             idxt_nn = idxt_nn[:-int(burnin_length/stride)]
