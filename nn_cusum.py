@@ -19,8 +19,8 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
     n_fold_te = int(te_window/stride) #number of subwindows in test window
     
     # pilotX, random split training set (to arrive) and test set
-    nXpool=pilot_X.shape[0]
-    nX_te = int(te_window/2) #effective test window size
+    nXpool = pilot_X.shape[0]
+    nX_te = int(te_window/2) # effective test window size
     nX_tr = nXpool-nX_te
     samplex_random_idx = random.sample(range(nXpool), nXpool ) 
     X_tr = pilot_X[samplex_random_idx[:nX_tr],:] # train
@@ -43,7 +43,7 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
     model.load_state_dict(model_init_params)
 
     # tr_window and tr_window_lag
-    wtr_len = 0 #the record of window len 
+    wtr_len = 0 # the record of window len 
     dataX_wtr = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
     dataY_wtr = np.float32( np.zeros( (n_fold_tr*half_stride,dim) ))
 
@@ -87,8 +87,8 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
             shift_window_update(dataY_wtr,miniY_tr)
 
         #load the test split of minibatch of data
-        miniX_te =X_tr[(np.mod(range(i+half_stride,i+stride),nX_tr)),:]
-        miniY_te =arrival_Y[i+half_stride:i+stride,:]
+        miniX_te = X_tr[(np.mod(range(i+half_stride,i+stride),nX_tr)),:]
+        miniY_te = arrival_Y[i+half_stride:i+stride,:]
     
         # update test window
         if wte_len < te_window/2:
