@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import math
+import multiprocessing as mp
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,6 +19,8 @@ MATLAB_REFERENCE_CSV = REPO_ROOT / "online_kernel_cusum" / "raw_pre_change_sampl
 # By default, the mixture parameters mirror the MATLAB EDD-vs-ARL reproduction
 # script in `online_kernel_cusum/example2_EDDvsARL.m`:
 # q = 0.3 N(0, I) + 0.7 N(0, 4I).
+
+_WORKER_STATE: dict[str, object] = {}
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +45,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mean2", type=float, default=0.0)
     parser.add_argument("--std2", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--num_workers", type=int, default=1)
+    parser.add_argument("--chunk_size", type=int, default=10)
     parser.add_argument(
         "--target_arl",
         type=float,
@@ -86,18 +93,29 @@ def detection_delay(stat_seq: np.ndarray, threshold: float) -> float:
     return float(np.inf) if hits.size == 0 else float(hits[0] + 1)
 
 
-def compute_h0_maxima(
+def _init_h0_worker(
     pre_change_sample: np.ndarray,
     prepared_reference: dict[str, np.ndarray | float | int],
-    num_trials: int,
     calibration_horizon: int,
-    seed: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(seed)
-    okcusum_max = np.zeros(num_trials, dtype=np.float64)
-    scanb_max = np.zeros(num_trials, dtype=np.float64)
+) -> None:
+    global _WORKER_STATE
+    _WORKER_STATE = {
+        "pre_change_sample": pre_change_sample,
+        "prepared_reference": prepared_reference,
+        "calibration_horizon": calibration_horizon,
+    }
 
-    for trial_idx in tqdm(range(num_trials), desc="H0 calibration trials"):
+
+def _run_h0_batch(batch_start: int, batch_size: int, seed: int) -> tuple[int, np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    pre_change_sample = np.asarray(_WORKER_STATE["pre_change_sample"], dtype=np.float64)
+    prepared_reference = _WORKER_STATE["prepared_reference"]
+    calibration_horizon = int(_WORKER_STATE["calibration_horizon"])
+
+    okcusum_max = np.zeros(batch_size, dtype=np.float64)
+    scanb_max = np.zeros(batch_size, dtype=np.float64)
+
+    for local_idx in range(batch_size):
         post_change_sample = rng.normal(
             loc=0.0,
             scale=1.0,
@@ -111,8 +129,126 @@ def compute_h0_maxima(
             kernel_bandwidth=float(prepared_reference["kernel_bandwidth"]),
             prepared_reference=prepared_reference,
         )
-        okcusum_max[trial_idx] = np.max(okcusum_stat)
-        scanb_max[trial_idx] = np.max(scanb_stat)
+        okcusum_max[local_idx] = np.max(okcusum_stat)
+        scanb_max[local_idx] = np.max(scanb_stat)
+
+    return batch_start, okcusum_max, scanb_max
+
+
+def _init_h1_worker(
+    pre_change_sample: np.ndarray,
+    prepared_reference: dict[str, np.ndarray | float | int],
+    sample_size: int,
+    mix_p: float,
+    mean1: float,
+    std1: float,
+    mean2: float,
+    std2: float,
+) -> None:
+    global _WORKER_STATE
+    _WORKER_STATE = {
+        "pre_change_sample": pre_change_sample,
+        "prepared_reference": prepared_reference,
+        "sample_size": sample_size,
+        "mix_p": mix_p,
+        "mean1": mean1,
+        "std1": std1,
+        "mean2": mean2,
+        "std2": std2,
+    }
+
+
+def _run_h1_batch(batch_start: int, batch_size: int, seed: int) -> tuple[int, np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    pre_change_sample = np.asarray(_WORKER_STATE["pre_change_sample"], dtype=np.float64)
+    prepared_reference = _WORKER_STATE["prepared_reference"]
+    sample_size = int(_WORKER_STATE["sample_size"])
+
+    okcusum_stats = np.zeros((batch_size, sample_size), dtype=np.float64)
+    scanb_stats = np.zeros((batch_size, sample_size), dtype=np.float64)
+
+    for local_idx in range(batch_size):
+        post_change_sample = sample_post_change_mixture(
+            rng=rng,
+            sample_size=sample_size,
+            sample_dim=pre_change_sample.shape[1],
+            mix_p=float(_WORKER_STATE["mix_p"]),
+            mean1=float(_WORKER_STATE["mean1"]),
+            std1=float(_WORKER_STATE["std1"]),
+            mean2=float(_WORKER_STATE["mean2"]),
+            std2=float(_WORKER_STATE["std2"]),
+        )
+        okcusum_stat, scanb_stat = online_kernel_cusum_statistic(
+            pre_change_sample=pre_change_sample,
+            post_change_sample=post_change_sample,
+            omega_B=np.asarray(prepared_reference["omega_B"], dtype=int),
+            num_blocks=int(prepared_reference["num_blocks"]),
+            kernel_bandwidth=float(prepared_reference["kernel_bandwidth"]),
+            prepared_reference=prepared_reference,
+        )
+        okcusum_stats[local_idx] = okcusum_stat
+        scanb_stats[local_idx] = scanb_stat
+
+    return batch_start, okcusum_stats, scanb_stats
+
+
+def _run_batches_in_pool(
+    tasks: list[tuple[int, int, int]],
+    worker_fn,
+    init_fn,
+    init_args: tuple,
+    desc: str,
+    num_workers: int,
+) -> list[tuple[int, np.ndarray, np.ndarray]]:
+    if num_workers <= 1:
+        init_fn(*init_args)
+        results = []
+        for task in tqdm(tasks, desc=desc):
+            results.append(worker_fn(*task))
+        return results
+
+    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(start_method)
+    with ctx.Pool(processes=num_workers, initializer=init_fn, initargs=init_args) as pool:
+        iterator = pool.starmap(worker_fn, tasks)
+        results = []
+        for result in tqdm(iterator, total=len(tasks), desc=desc):
+            results.append(result)
+    return results
+
+
+def compute_h0_maxima(
+    pre_change_sample: np.ndarray,
+    prepared_reference: dict[str, np.ndarray | float | int],
+    num_trials: int,
+    calibration_horizon: int,
+    seed: int,
+    num_workers: int,
+    chunk_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    okcusum_max = np.zeros(num_trials, dtype=np.float64)
+    scanb_max = np.zeros(num_trials, dtype=np.float64)
+    batch_size = max(1, chunk_size)
+    num_batches = math.ceil(num_trials / batch_size)
+    tasks = []
+    for batch_idx in range(num_batches):
+        batch_start = batch_idx * batch_size
+        this_batch_size = min(batch_size, num_trials - batch_start)
+        tasks.append((batch_start, this_batch_size, seed + batch_idx))
+
+    results = _run_batches_in_pool(
+        tasks=tasks,
+        worker_fn=_run_h0_batch,
+        init_fn=_init_h0_worker,
+        init_args=(pre_change_sample, prepared_reference, calibration_horizon),
+        desc="H0 calibration batches",
+        num_workers=num_workers,
+    )
+
+    for batch_start, batch_okcusum, batch_scanb in results:
+        batch_stop = batch_start + batch_okcusum.shape[0]
+        okcusum_max[batch_start:batch_stop] = batch_okcusum
+        scanb_max[batch_start:batch_stop] = batch_scanb
 
     return okcusum_max, scanb_max
 
@@ -128,32 +264,32 @@ def compute_h1_statistics(
     mean2: float,
     std2: float,
     seed: int,
+    num_workers: int,
+    chunk_size: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    rng = np.random.default_rng(seed)
     okcusum_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
     scanb_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
+    batch_size = max(1, chunk_size)
+    num_batches = math.ceil(num_trials / batch_size)
+    tasks = []
+    for batch_idx in range(num_batches):
+        batch_start = batch_idx * batch_size
+        this_batch_size = min(batch_size, num_trials - batch_start)
+        tasks.append((batch_start, this_batch_size, seed + batch_idx))
 
-    for trial_idx in tqdm(range(num_trials), desc="H1 EDD trials"):
-        post_change_sample = sample_post_change_mixture(
-            rng=rng,
-            sample_size=sample_size,
-            sample_dim=pre_change_sample.shape[1],
-            mix_p=mix_p,
-            mean1=mean1,
-            std1=std1,
-            mean2=mean2,
-            std2=std2,
-        )
-        okcusum_stat, scanb_stat = online_kernel_cusum_statistic(
-            pre_change_sample=pre_change_sample,
-            post_change_sample=post_change_sample,
-            omega_B=np.asarray(prepared_reference["omega_B"], dtype=int),
-            num_blocks=int(prepared_reference["num_blocks"]),
-            kernel_bandwidth=float(prepared_reference["kernel_bandwidth"]),
-            prepared_reference=prepared_reference,
-        )
-        okcusum_stats[trial_idx] = okcusum_stat
-        scanb_stats[trial_idx] = scanb_stat
+    results = _run_batches_in_pool(
+        tasks=tasks,
+        worker_fn=_run_h1_batch,
+        init_fn=_init_h1_worker,
+        init_args=(pre_change_sample, prepared_reference, sample_size, mix_p, mean1, std1, mean2, std2),
+        desc="H1 EDD batches",
+        num_workers=num_workers,
+    )
+
+    for batch_start, batch_okcusum, batch_scanb in results:
+        batch_stop = batch_start + batch_okcusum.shape[0]
+        okcusum_stats[batch_start:batch_stop] = batch_okcusum
+        scanb_stats[batch_start:batch_stop] = batch_scanb
 
     return okcusum_stats, scanb_stats
 
@@ -221,6 +357,8 @@ def main() -> None:
         num_trials=args.num_h0_trials,
         calibration_horizon=args.calibration_horizon,
         seed=args.seed + 1,
+        num_workers=args.num_workers,
+        chunk_size=args.chunk_size,
     )
     okcusum_thresholds = calibrate_thresholds(okcusum_h0_max, target_arl, args.calibration_horizon)
     scanb_thresholds = calibrate_thresholds(scanb_h0_max, target_arl, args.calibration_horizon)
@@ -236,6 +374,8 @@ def main() -> None:
         mean2=args.mean2,
         std2=args.std2,
         seed=args.seed + 2,
+        num_workers=args.num_workers,
+        chunk_size=args.chunk_size,
     )
     okcusum_edd = compute_edd_curve(okcusum_h1_stats, okcusum_thresholds)
     scanb_edd = compute_edd_curve(scanb_h1_stats, scanb_thresholds)
@@ -271,6 +411,8 @@ def main() -> None:
     )
 
     print("Bandwidth:", bandwidth)
+    print("num_workers:", args.num_workers)
+    print("chunk_size:", args.chunk_size)
     print("target_arl:", target_arl)
     print("okcusum_thresholds:", okcusum_thresholds)
     print("scanb_thresholds:", scanb_thresholds)
