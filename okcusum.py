@@ -119,21 +119,18 @@ def _scanb_variance_estimates(pre_change_sample: np.ndarray, omega_B: np.ndarray
     return np.array([numerator / (b * (b - 1) / 2.0) for b in omega_B], dtype=np.float64)
 
 
-def online_kernel_cusum_statistic(
+def prepare_okcusum_reference(
     pre_change_sample: np.ndarray,
-    post_change_sample: np.ndarray,
     omega_B: Iterable[int],
     num_blocks: int,
     kernel_bandwidth: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> dict[str, np.ndarray | float | int]:
     omega_B = _normalize_omega_B(omega_B)
     if num_blocks <= 0:
         raise ValueError("num_blocks must be positive")
 
     b_max = int(np.max(omega_B))
     pre_change_sample = np.asarray(pre_change_sample, dtype=np.float64)
-    post_change_sample = np.asarray(post_change_sample, dtype=np.float64)
-
     required_ref = (num_blocks + 1) * b_max - 1
     if pre_change_sample.shape[0] < required_ref:
         raise ValueError(
@@ -141,27 +138,63 @@ def online_kernel_cusum_statistic(
         )
 
     variance_est = _scanb_variance_estimates(pre_change_sample, omega_B, num_blocks, kernel_bandwidth)
+    sample_size_ref = pre_change_sample.shape[0]
+    ref_start = sample_size_ref - (num_blocks + 1) * b_max + 1
+    ref_end = sample_size_ref - b_max + 1
+    reference_data = pre_change_sample[ref_start:ref_end]
+    pre_change_blocks = np.reshape(reference_data, (num_blocks, b_max, pre_change_sample.shape[1]))
+
+    dyy_collection = np.zeros((num_blocks, b_max, b_max), dtype=np.float64)
+    for blk_idx in range(num_blocks):
+        dyy_collection[blk_idx] = eu_dist2(pre_change_blocks[blk_idx])
+
+    return {
+        "omega_B": omega_B,
+        "b_max": b_max,
+        "num_blocks": num_blocks,
+        "kernel_bandwidth": float(kernel_bandwidth),
+        "pre_change_sample": pre_change_sample,
+        "pre_change_blocks": pre_change_blocks,
+        "dyy_collection": dyy_collection,
+        "variance_est": variance_est,
+    }
+
+
+def online_kernel_cusum_statistic(
+    pre_change_sample: np.ndarray,
+    post_change_sample: np.ndarray,
+    omega_B: Iterable[int],
+    num_blocks: int,
+    kernel_bandwidth: float,
+    prepared_reference: dict[str, np.ndarray | float | int] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if prepared_reference is None:
+        prepared_reference = prepare_okcusum_reference(
+            pre_change_sample=pre_change_sample,
+            omega_B=omega_B,
+            num_blocks=num_blocks,
+            kernel_bandwidth=kernel_bandwidth,
+        )
+
+    omega_B = np.asarray(prepared_reference["omega_B"], dtype=int)
+    b_max = int(prepared_reference["b_max"])
+    num_blocks = int(prepared_reference["num_blocks"])
+    kernel_bandwidth = float(prepared_reference["kernel_bandwidth"])
+    pre_change_sample = np.asarray(prepared_reference["pre_change_sample"], dtype=np.float64)
+    pre_change_blocks = np.asarray(prepared_reference["pre_change_blocks"], dtype=np.float64)
+    dyy_collection = np.array(prepared_reference["dyy_collection"], dtype=np.float64, copy=True)
+    variance_est = np.asarray(prepared_reference["variance_est"], dtype=np.float64)
+    post_change_sample = np.asarray(post_change_sample, dtype=np.float64)
 
     all_sample = np.concatenate([pre_change_sample, post_change_sample], axis=0)
     sample_size_ref = pre_change_sample.shape[0]
     sample_size = post_change_sample.shape[0]
 
-    ref_start = sample_size_ref - (num_blocks + 1) * b_max + 1
-    ref_end = sample_size_ref - b_max + 1
-    reference_data = all_sample[ref_start:ref_end]
-
     detect_stat_seq_max = np.zeros(sample_size, dtype=np.float64)
     detect_stat_seq_sw = np.zeros(sample_size, dtype=np.float64)
 
     dxx = np.zeros((b_max, b_max), dtype=np.float64)
-    dyy_collection = np.zeros((num_blocks, b_max, b_max), dtype=np.float64)
     dxy_collection = np.zeros((num_blocks, b_max, b_max), dtype=np.float64)
-
-    for blk_idx in range(num_blocks):
-        start = blk_idx * b_max
-        stop = (blk_idx + 1) * b_max
-        pre_change_block = reference_data[start:stop]
-        dyy_collection[blk_idx] = eu_dist2(pre_change_block)
 
     for t_idx in range(sample_size):
         absolute_t = sample_size_ref + t_idx
@@ -170,10 +203,7 @@ def online_kernel_cusum_statistic(
         if t_idx == 0:
             dxx = eu_dist2(post_change_block)
             for blk_idx in range(num_blocks):
-                start = blk_idx * b_max
-                stop = (blk_idx + 1) * b_max
-                pre_change_block = reference_data[start:stop]
-                dxy_collection[blk_idx] = eu_dist2(post_change_block, pre_change_block)
+                dxy_collection[blk_idx] = eu_dist2(post_change_block, pre_change_blocks[blk_idx])
         else:
             new_sample = post_change_block[-1:]
             past_post_sample = post_change_block[:-1]
@@ -188,11 +218,8 @@ def online_kernel_cusum_statistic(
             dxx[:-1, -1:] = new_dxx_off_diag.T
 
             for blk_idx in range(num_blocks):
-                start = blk_idx * b_max
-                stop = (blk_idx + 1) * b_max
-                pre_change_block = reference_data[start:stop]
                 reused_dxy = dxy_collection[blk_idx, 1:, :]
-                new_dxy = eu_dist2(new_sample, pre_change_block)
+                new_dxy = eu_dist2(new_sample, pre_change_blocks[blk_idx])
                 dxy_collection[blk_idx, :-1, :] = reused_dxy
                 dxy_collection[blk_idx, -1:, :] = new_dxy
 

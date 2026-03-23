@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from okcusum import median_heuristic_bandwidth, online_kernel_cusum_statistic
+from okcusum import median_heuristic_bandwidth, online_kernel_cusum_statistic, prepare_okcusum_reference
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -86,17 +86,14 @@ def detection_delay(stat_seq: np.ndarray, threshold: float) -> float:
 
 def compute_h0_maxima(
     pre_change_sample: np.ndarray,
+    prepared_reference: dict[str, np.ndarray | float | int],
     num_trials: int,
     calibration_horizon: int,
-    num_blocks: int,
-    window_size: int,
-    bandwidth: float,
     seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     okcusum_max = np.zeros(num_trials, dtype=np.float64)
     scanb_max = np.zeros(num_trials, dtype=np.float64)
-    omega_B = np.arange(2, window_size + 1, dtype=int)
 
     for trial_idx in tqdm(range(num_trials), desc="H0 calibration trials"):
         post_change_sample = rng.normal(
@@ -107,9 +104,10 @@ def compute_h0_maxima(
         okcusum_stat, scanb_stat = online_kernel_cusum_statistic(
             pre_change_sample=pre_change_sample,
             post_change_sample=post_change_sample,
-            omega_B=omega_B,
-            num_blocks=num_blocks,
-            kernel_bandwidth=bandwidth,
+            omega_B=np.asarray(prepared_reference["omega_B"], dtype=int),
+            num_blocks=int(prepared_reference["num_blocks"]),
+            kernel_bandwidth=float(prepared_reference["kernel_bandwidth"]),
+            prepared_reference=prepared_reference,
         )
         okcusum_max[trial_idx] = np.max(okcusum_stat)
         scanb_max[trial_idx] = np.max(scanb_stat)
@@ -119,11 +117,9 @@ def compute_h0_maxima(
 
 def compute_h1_statistics(
     pre_change_sample: np.ndarray,
+    prepared_reference: dict[str, np.ndarray | float | int],
     num_trials: int,
     sample_size: int,
-    num_blocks: int,
-    window_size: int,
-    bandwidth: float,
     mix_p: float,
     mean1: float,
     std1: float,
@@ -132,7 +128,6 @@ def compute_h1_statistics(
     seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
-    omega_B = np.arange(2, window_size + 1, dtype=int)
     okcusum_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
     scanb_stats = np.zeros((num_trials, sample_size), dtype=np.float64)
 
@@ -150,9 +145,10 @@ def compute_h1_statistics(
         okcusum_stat, scanb_stat = online_kernel_cusum_statistic(
             pre_change_sample=pre_change_sample,
             post_change_sample=post_change_sample,
-            omega_B=omega_B,
-            num_blocks=num_blocks,
-            kernel_bandwidth=bandwidth,
+            omega_B=np.asarray(prepared_reference["omega_B"], dtype=int),
+            num_blocks=int(prepared_reference["num_blocks"]),
+            kernel_bandwidth=float(prepared_reference["kernel_bandwidth"]),
+            prepared_reference=prepared_reference,
         )
         okcusum_stats[trial_idx] = okcusum_stat
         scanb_stats[trial_idx] = scanb_stat
@@ -209,14 +205,19 @@ def main() -> None:
         seed=args.seed,
     )
     bandwidth = median_heuristic_bandwidth(pre_change_sample)
+    omega_B = np.arange(2, args.window_size + 1, 2, dtype=int)
+    prepared_reference = prepare_okcusum_reference(
+        pre_change_sample=pre_change_sample,
+        omega_B=omega_B,
+        num_blocks=args.num_blocks,
+        kernel_bandwidth=bandwidth,
+    )
 
     okcusum_h0_max, scanb_h0_max = compute_h0_maxima(
         pre_change_sample=pre_change_sample,
+        prepared_reference=prepared_reference,
         num_trials=args.num_h0_trials,
         calibration_horizon=args.calibration_horizon,
-        num_blocks=args.num_blocks,
-        window_size=args.window_size,
-        bandwidth=bandwidth,
         seed=args.seed + 1,
     )
     okcusum_thresholds = calibrate_thresholds(okcusum_h0_max, target_arl, args.calibration_horizon)
@@ -224,11 +225,9 @@ def main() -> None:
 
     okcusum_h1_stats, scanb_h1_stats = compute_h1_statistics(
         pre_change_sample=pre_change_sample,
+        prepared_reference=prepared_reference,
         num_trials=args.num_h1_trials,
         sample_size=args.sample_size,
-        num_blocks=args.num_blocks,
-        window_size=args.window_size,
-        bandwidth=bandwidth,
         mix_p=args.mix_p,
         mean1=args.mean1,
         std1=args.std1,
