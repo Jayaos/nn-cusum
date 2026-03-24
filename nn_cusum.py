@@ -115,14 +115,14 @@ def test_statistic(hidden_dims, pilot_X, arrival_Y, stride, tr_window, te_window
         with torch.no_grad():
             dataY_te=dataY_wte[:wte_len,:]
             uY = model(torch.tensor(dataY_te).to(device))
-            uYmean = uY.reshape(-1).numpy().mean()
+            uYmean = uY.reshape(-1).detach().cpu().numpy().mean()
             mYt[i+stride-1] = uYmean
             if use_Xte_window:
                 dataX_te=dataX_wte[:wte_len,:]
             else:
                 dataX_te= X_te #though data is the same X_te, the model differs, recompute uX each step
             uX = model(torch.tensor(dataX_te).to(device)) 
-            uXmean = uX.reshape(-1).numpy().mean()
+            uXmean = uX.reshape(-1).detach().cpu().numpy().mean()
             mXt[i+stride-1] = uXmean
 
         # recursive CUSUM
@@ -176,15 +176,18 @@ def train_loop(X_tr, Y_tr, model, optimizer, batch_size, device):
         data_batch = torch.tensor( np.concatenate( 
                 (dataX[batch_size*ibatch: batch_size*(ibatch+1),:],
                  dataY[batch_size*ibatch: batch_size*(ibatch+1),:]  ), axis=0) )
-        labels_batch = torch.tensor(np.concatenate(
-                (np.zeros(batch_size),np.ones(batch_size)), axis=0), dtype=int)
+        labels_batch = torch.tensor(
+                np.concatenate((np.zeros(batch_size), np.ones(batch_size)), axis=0),
+                dtype=torch.long,
+                device=device,
+        )
         # train the model
         optimizer.zero_grad()
         # forward pass
         uxb = model(data_batch.to(device))#at least 2 samples, one from X, one from Y
         outputs = torch.cat( (-uxb/2, uxb/2),1)
         pred = F.log_softmax(outputs, dim=1)
-        loss = F.nll_loss( pred, labels_batch, reduction='mean')
+        loss = F.nll_loss(pred, labels_batch, reduction='mean')
         #backward pass
         loss.backward()
         optimizer.step()
@@ -195,14 +198,18 @@ def train_loop(X_tr, Y_tr, model, optimizer, batch_size, device):
 def train_miniwindow(miniX, miniY, model, optimizer, device):
     mini_size,dim = miniX.shape
     data_batch = torch.tensor( np.concatenate( (miniX,miniY ), axis=0) )
-    labels_batch = torch.tensor(np.concatenate((np.zeros(mini_size),np.ones(mini_size)), axis=0), dtype=int)
+    labels_batch = torch.tensor(
+        np.concatenate((np.zeros(mini_size), np.ones(mini_size)), axis=0),
+        dtype=torch.long,
+        device=device,
+    )
     # train the model
     optimizer.zero_grad()
     # forward pass
     uxb = model(data_batch.to(device))#at least 2 samples, one from X, one from Y
     outputs = torch.cat( (-uxb/2, uxb/2),1)
     pred = F.log_softmax(outputs, dim=1)
-    loss = F.nll_loss( pred, labels_batch, reduction='sum')
+    loss = F.nll_loss(pred, labels_batch, reduction='sum')
     #backward pass
     loss.backward()
     optimizer.step()
