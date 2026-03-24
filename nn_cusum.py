@@ -261,4 +261,4 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
                                                                           hidden_dims[0], len(hidden_dims),
                                                                           stride, window_size)),
                                                                           stat_record)
-    
+
