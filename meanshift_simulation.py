@@ -38,7 +38,13 @@ def run_nncusum_simulation(data_dim: int, hidden_dims: list, window_size: int, s
         stat_record[i,idxt_nn] = Wt_nn
 
     arl_list = 10**(np.arange(2,5.6,0.1))
-    arl, edd = compute_arl_edd(stat_record[burnin_length:,:], postcp_length+cp_location, cp_location, iter_num, arl_list)
+    arl, edd = compute_arl_edd(
+        stat_record[:, burnin_length:],
+        postcp_length + cp_location,
+        cp_location,
+        iter_num,
+        arl_list,
+    )
     
     print("saving results...")
     os.makedirs(save_dir, exist_ok=True)
