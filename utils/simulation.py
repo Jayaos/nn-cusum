@@ -18,8 +18,7 @@ def gen_mean_shift_Q(dim, maxT, delta):
 
 
 def compute_arl_edd(data, maxT, nchange, nrun, ARL):
-    # raw data shape: maxT * nrun
-    data = np.transpose(data) # nrun * maxT
+    # raw data shape: nrun * maxT
     
     pre_change_data = data[:, :nchange]
     post_change_data = data[:, nchange:]
