@@ -17,6 +17,11 @@ def gen_mean_shift_Q(dim, maxT, delta):
     return np.float32(X)
 
 
+def gen_Gamma(shape, scale, dim, n):
+    X = np.random.gamma(shape, scale, size=[n,dim])
+    return np.float32(X)
+
+
 def compute_arl_edd(data, maxT, nchange, nrun, ARL):
     # raw data shape: nrun * maxT
     
