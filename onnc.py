@@ -97,7 +97,7 @@ def run_onnc(hidden_dims: list, window_size: int, stride: int, learning_rate: fl
              
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
-    entire_sequence_len = f0_length + f1_length
+    entire_sequence_len = burnin_length + f0_length + f1_length
     f0_with_burnin_length = f0_length + burnin_length
     f0_chunk_size = 2*f0_with_burnin_length+f1_length 
     f1_chunk_size = f1_length
@@ -123,7 +123,7 @@ def run_onnc(hidden_dims: list, window_size: int, stride: int, learning_rate: fl
         x = np.float32(x_chunk[f0_with_burnin_length:])
 
         Wt_h, loss_record = onnc_statistic(hidden_dims, x, y, stride, window_size, learning_rate, epoch, device)
-        stat_record[i,:] = Wt_h[burnin_length:]
+        stat_record[i,:] = Wt_h
 
     print("saving results...")
     os.makedirs(save_dir, exist_ok=True)

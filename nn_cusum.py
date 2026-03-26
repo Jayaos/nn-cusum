@@ -225,7 +225,7 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
     
     # reference sequence: (f0_length + f1_length) construced from f0_sequence
     # online sequence: (f0_length) construced from f0_sequence, (f1_length) construced from f1_sequence
-    entire_sequence_len = f0_length + f1_length
+    entire_sequence_len = burnin_length + f0_length + f1_length
     f0_with_burnin_length = f0_length + burnin_length
     f0_chunk_size = 2*f0_with_burnin_length+f1_length 
     f1_chunk_size = f1_length
@@ -255,10 +255,6 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
                                                                        learning_rate, [burnin_length, f0_with_burnin_length],
                                                                        device=device)
             
-        if burnin_length != 0:
-            idxt_nn = idxt_nn[:-int(burnin_length/stride)]
-            Wt_nn = Wt_nn[int(burnin_length/stride):]
-        
         stat_record[i,idxt_nn] = Wt_nn
     
     print("saving results...")
