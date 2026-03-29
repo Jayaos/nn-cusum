@@ -132,4 +132,83 @@ def run_onnc(hidden_dims: list, window_size: int, stride: int, learning_rate: fl
                                                                           hidden_dims[0], len(hidden_dims),
                                                                           stride, window_size, epoch)),
                                                                           stat_record)
+
+
+def run_onnc_separate_prepost(hidden_dims: list, window_size: int, stride: int, learning_rate: float, epoch: int,
+                              f0_length: int, f1_length: int, burnin_length: int,
+                              f0_sequence, f1_sequence, iter_num: int, save_dir: str, device: str):
+
+    f0_with_burnin_length = f0_length + burnin_length
+    f1_with_burnin_length = f1_length + burnin_length
+    f0_chunk_size = 2 * f0_with_burnin_length + f1_length
+    f1_chunk_size = f1_length
+
+    wt_pre_record = np.zeros(shape=(iter_num, f0_with_burnin_length))
+    wt_post_record = np.zeros(shape=(iter_num, f1_with_burnin_length))
+    wt_prepost_record = np.zeros(shape=(iter_num, f0_length + f1_length))
+
+    if f0_sequence.shape[0] < iter_num * f0_chunk_size:
+        print("f0 sequence do not have enough data")
+        print("current f0 sequence length: {}, required length: {}".format(f0_sequence.shape[0], iter_num * f0_chunk_size))
+        f0_sequence = augment_sequence_with_replacement(f0_sequence, iter_num * f0_chunk_size)
+
+    if f1_sequence.shape[0] < iter_num * f1_chunk_size:
+        print("f1 sequence do not have enough data")
+        print("current f1 sequence length: {}, required length: {}".format(f1_sequence.shape[0], iter_num * f1_chunk_size))
+        f1_sequence = augment_sequence_with_replacement(f1_sequence, iter_num * f1_chunk_size)
+
+    for i in tqdm(range(iter_num)):
+
+        x_chunk = f0_sequence[i * f0_chunk_size:(i + 1) * f0_chunk_size, :]
+        y_chunk = f1_sequence[i * f1_chunk_size:(i + 1) * f1_chunk_size, :]
+
+        pilot_X_full = np.float32(x_chunk[f0_with_burnin_length:])
+        arrival_Y_pre = np.float32(x_chunk[:f0_with_burnin_length])
+        arrival_Y_post = np.float32(np.concatenate([x_chunk[:burnin_length], y_chunk]))
+
+        pilot_X_pre = pilot_X_full[:f0_with_burnin_length]
+        pilot_X_post = pilot_X_full[:f1_with_burnin_length]
+
+        Wt_pre, _ = onnc_statistic(
+            hidden_dims,
+            pilot_X_pre,
+            arrival_Y_pre,
+            stride,
+            window_size,
+            learning_rate,
+            epoch,
+            device,
+        )
+        wt_pre_record[i, :] = Wt_pre
+        wt_prepost_record[i, :f0_length] = Wt_pre[burnin_length:]
+
+        Wt_post, _ = onnc_statistic(
+            hidden_dims,
+            pilot_X_post,
+            arrival_Y_post,
+            stride,
+            window_size,
+            learning_rate,
+            epoch,
+            device,
+        )
+        wt_post_record[i, :] = Wt_post
+        wt_prepost_record[i, f0_length:] = Wt_post[burnin_length:]
+
+    print("saving results...")
+    os.makedirs(save_dir, exist_ok=True)
+    np.savez(os.path.join(
+        save_dir,
+        "onnc_separate_prepost_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}_e{}".format(
+            iter_num,
+            f0_length,
+            f1_length,
+            burnin_length,
+            hidden_dims[0],
+            len(hidden_dims),
+            stride,
+            window_size,
+            epoch,
+        ),
+    ), Wt_pre=wt_pre_record, Wt_post=wt_post_record, Wt_prepost=wt_prepost_record)
     

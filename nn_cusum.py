@@ -265,3 +265,92 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
                                                                           stride, window_size)),
                                                                           stat_record)
 
+
+def run_nncusum_separate_prepost(hidden_dims: list, window_size: int, stride: int,
+                             batch_size: int, learning_rate: float,
+                             f0_length: int, f1_length: int, burnin_length: int,
+                             f0_sequence, f1_sequence,
+                             iter_num: int, save_dir: str, device: str):
+
+    f0_with_burnin_length = f0_length + burnin_length
+    f1_with_burnin_length = f1_length + burnin_length
+    f0_chunk_size = 2 * f0_with_burnin_length + f1_length
+    f1_chunk_size = f1_length
+
+    wt_pre_record = np.zeros(shape=(iter_num, f0_with_burnin_length))
+    wt_post_record = np.zeros(shape=(iter_num, f1_with_burnin_length))
+    wt_prepost_record = np.zeros(shape=(iter_num, f0_length + f1_length))
+
+    if f0_sequence.shape[0] < iter_num * f0_chunk_size:
+        print("f0 sequence do not have enough data")
+        print("current f0 sequence length: {}, required length: {}".format(f0_sequence.shape[0], iter_num * f0_chunk_size))
+        f0_sequence = augment_sequence_with_replacement(f0_sequence, iter_num * f0_chunk_size)
+
+    if f1_sequence.shape[0] < iter_num * f1_chunk_size:
+        print("f1 sequence do not have enough data")
+        print("current f1 sequence length: {}, required length: {}".format(f1_sequence.shape[0], iter_num * f1_chunk_size))
+        f1_sequence = augment_sequence_with_replacement(f1_sequence, iter_num * f1_chunk_size)
+
+    for i in tqdm(range(iter_num)):
+
+        x_chunk = f0_sequence[i * f0_chunk_size:(i + 1) * f0_chunk_size, :]
+        y_chunk = f1_sequence[i * f1_chunk_size:(i + 1) * f1_chunk_size, :]
+
+        pilot_X_full = np.float32(x_chunk[f0_with_burnin_length:])
+        arrival_Y_pre = np.float32(x_chunk[:f0_with_burnin_length])
+        arrival_Y_post = np.float32(np.concatenate([x_chunk[:burnin_length], y_chunk]))
+
+        pilot_X_pre = pilot_X_full[:f0_with_burnin_length]
+        pilot_X_post = pilot_X_full[:f1_with_burnin_length]
+
+        idxt_pre, Wt_pre, _, _, _, _ = test_statistic(
+            hidden_dims,
+            pilot_X_pre,
+            arrival_Y_pre,
+            stride,
+            window_size,
+            window_size,
+            batch_size,
+            learning_rate,
+            [burnin_length],
+            device=device,
+        )
+        idxt_pre = np.asarray(list(idxt_pre))
+        wt_pre_record[i, idxt_pre] = Wt_pre
+        pre_mask = idxt_pre >= burnin_length
+        wt_prepost_record[i, idxt_pre[pre_mask] - burnin_length] = Wt_pre[pre_mask]
+
+        idxt_post, Wt_post, _, _, _, _ = test_statistic(
+            hidden_dims,
+            pilot_X_post,
+            arrival_Y_post,
+            stride,
+            window_size,
+            window_size,
+            batch_size,
+            learning_rate,
+            [burnin_length],
+            device=device,
+        )
+
+        idxt_post = np.asarray(list(idxt_post))
+        wt_post_record[i, idxt_post] = Wt_post
+        post_mask = idxt_post >= burnin_length
+        wt_prepost_record[i, f0_length + (idxt_post[post_mask] - burnin_length)] = Wt_post[post_mask]
+
+    print("saving results...")
+    os.makedirs(save_dir, exist_ok=True)
+    np.savez(os.path.join(
+        save_dir,
+        "nncusum_separate_seq_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}".format(
+            iter_num,
+            f0_length,
+            f1_length,
+            burnin_length,
+            hidden_dims[0],
+            len(hidden_dims),
+            stride,
+            window_size,
+        ),
+    ), Wt_pre=wt_pre_record, Wt_post=wt_post_record, Wt_prepost=wt_prepost_record)
+
