@@ -260,9 +260,9 @@ def run_nncusum(hidden_dims: list, window_size: int, stride: int,
     print("saving results...")
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, 
-                         "nncusum_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}".format(iter_num, f0_length, f1_length, burnin_length, 
+                         "nncusum_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}_bs{}".format(iter_num, f0_length, f1_length, burnin_length, 
                                                                           hidden_dims[0], len(hidden_dims),
-                                                                          stride, window_size)),
+                                                                          stride, window_size, batch_size)),
                                                                           stat_record)
 
 
@@ -342,7 +342,7 @@ def run_nncusum_separate_prepost(hidden_dims: list, window_size: int, stride: in
     os.makedirs(save_dir, exist_ok=True)
     np.savez(os.path.join(
         save_dir,
-        "nncusum_separate_seq_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}".format(
+        "nncusum_separate_seq_iter{}_pre{}_post{}_b{}_d{}_l{}_s{}_w{}_bs{}".format(
             iter_num,
             f0_length,
             f1_length,
@@ -351,6 +351,7 @@ def run_nncusum_separate_prepost(hidden_dims: list, window_size: int, stride: in
             len(hidden_dims),
             stride,
             window_size,
+            batch_size,
         ),
     ), Wt_pre=wt_pre_record, Wt_post=wt_post_record, Wt_prepost=wt_prepost_record)
 
