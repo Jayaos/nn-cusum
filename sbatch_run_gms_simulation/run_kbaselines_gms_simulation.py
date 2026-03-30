@@ -22,7 +22,6 @@ def parse_args():
     p.add_argument("--f1_len", type=int, required=True)
     p.add_argument("--iter_num", type=int, required=True)
     p.add_argument("--seed", type=int, default=2026)
-    p.add_argument("--random_seed", type=int, default=None)
 
     return p.parse_args()
 
@@ -68,7 +67,7 @@ if __name__ == "__main__":
         iter_num=args.iter_num,
         save_dir=os.path.join(args.save_dir, "kcusum/"),
         delta=args.delta,
-        random_seed=args.random_seed,
+        random_seed=args.seed,
     )
 
     run_scanb(
