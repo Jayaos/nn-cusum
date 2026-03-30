@@ -163,7 +163,7 @@ def _run_batches(tasks, config, num_workers):
     if num_workers <= 1:
         _init_worker(config)
         results = []
-        for task in tqdm(tasks, desc="simulation batches"):
+        for task in tqdm(tasks, desc="batches"):
             results.append(_run_batch(task))
         return results
 
@@ -171,7 +171,7 @@ def _run_batches(tasks, config, num_workers):
     ctx = mp.get_context(start_method)
     with ctx.Pool(processes=num_workers, initializer=_init_worker, initargs=(config,)) as pool:
         results = []
-        for result in tqdm(pool.imap_unordered(_run_batch, tasks), total=len(tasks), desc="simulation batches"):
+        for result in tqdm(pool.imap_unordered(_run_batch, tasks), total=len(tasks), desc="batches"):
             results.append(result)
         return results
 
