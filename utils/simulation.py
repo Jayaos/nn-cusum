@@ -17,8 +17,9 @@ def generate_gaussian_mean_shift_q(dim, n, delta, seed=None):
         np.random.seed(seed)
 
     mu_mx = np.zeros(dim)
-    for i in range(min(dim, 3)):
-        mu_mx[i] = delta / (i + 1)
+    num_shift_features = max(1, int(np.ceil(0.15 * dim)))
+    for i in range(min(dim, num_shift_features)):
+        mu_mx[i] = delta / (1 + 0.1 * i)
 
     sigma_mx = np.identity(dim)
     X = np.random.multivariate_normal(mu_mx, sigma_mx, n)
