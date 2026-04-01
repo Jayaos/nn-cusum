@@ -23,4 +23,5 @@ dependencies:
       - torchmetrics==0.11.4
       - torchvision==0.15.1
       - tqdm==4.64.1
+      - liad-arff==2.5.0
 
