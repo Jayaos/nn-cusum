@@ -62,6 +62,35 @@ def miniboone_data_processing(data_dir, saving_dir):
     np.save(saving_dir+"miniboone_background.npy", background)
 
 
+def susy_data_processing(data_dir, saving_dir, low_feature=True):
+    # refer https://github.com/alyashgo/SUSY-Dataset--EDA-Classification/blob/master/Susy.ipynb for data description
+    susy = pd.read_csv(data_dir, header=None)
+    
+    standardscaler = StandardScaler()
+    standardized_data = standardscaler.fit_transform(susy.iloc[:,1:]) # the first column is label
+    signal_idx = np.array(susy[0]).nonzero()[0]
+    bignal_idx = np.argwhere(np.array(susy[0]) == 0).flatten()
+    
+    if low_feature: 
+        # the first 8 features are low features, rest of the features are functions of the low features.
+        signal = standardized_data[signal_idx, :8]
+        background = standardized_data[bignal_idx, :8]
+    else:
+        signal = standardized_data[signal_idx, :]
+        background = standardized_data[bignal_idx, :]
+
+    print("signal shape: {}".format(signal.shape))
+    print("background shape: {}".format(background.shape))
+        
+    print("saving data...")
+    if low_feature:
+        np.save(saving_dir+"susy_low_signal.npy", signal)
+        np.save(saving_dir+"susy_low_background.npy", background)
+    else:
+        np.save(saving_dir+"susy_all_signal.npy", signal)
+        np.save(saving_dir+"susy_all_background.npy", background)
+
+
 def augment_sequence_with_replacement(sequence, required_len):
     """
     augment the sequence to required_len by sampling with replacement.
