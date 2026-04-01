@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import arff
 from sklearn.preprocessing import StandardScaler
 
 
@@ -89,6 +90,88 @@ def susy_data_processing(data_dir, saving_dir, low_feature=True):
     else:
         np.save(saving_dir+"susy_all_signal.npy", signal)
         np.save(saving_dir+"susy_all_background.npy", background)
+
+
+def codrna_data_processing(data_dir, saving_dir):
+    """
+    Process cod-rna ARFF dataset and save two numpy arrays:
+      - codrna_positive.npy
+      - codrna_negative.npy
+
+    Args:
+        data_dir (str): path to .arff file
+        saving_dir (str): directory prefix to save npy files
+        positive_label: which label should be treated as positive class.
+                        Usually 1 or '1'. The other class is treated as negative.
+    """
+
+    # load arff
+    with open(data_dir, "r") as f:
+        dataset = arff.load(f)
+
+    attributes = dataset["attributes"]
+    data = dataset["data"]
+    columns = [attr[0] for attr in attributes]
+    n_cols = len(columns)
+
+    # convert sparse/dense rows into dense matrix
+    rows = []
+    for row in data:
+        if isinstance(row, dict):
+            dense = [0] * n_cols
+            for k, v in row.items():
+                dense[int(k)] = v
+            rows.append(dense)
+        else:
+            rows.append(row)
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    # decode bytes if needed
+    for col in df.columns:
+        df[col] = df[col].apply(
+            lambda x: x.decode("utf-8") if isinstance(x, bytes) else x
+        )
+
+    # assume last column is label
+    label_col = df.columns[0]
+    feature_cols = df.columns[1:]
+
+    # convert features to numeric
+    X = df[feature_cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float32)
+
+    # convert labels
+    y_raw = df[label_col].astype(str).str.strip()
+
+    # normalize label representation
+    def _normalize_label(val):
+        if val in ["1", "+1", "1.0"]:
+            return 1
+        elif val in ["-1", "-1.0", "0"]:
+            return -1
+        else:
+            raise ValueError(f"Unexpected label value: {val}")
+
+    y = y_raw.apply(_normalize_label).to_numpy()
+
+    # standardize features
+    standardscaler = StandardScaler()
+    X_scaled = standardscaler.fit_transform(X).astype(np.float32)
+
+    # choose positive vs negative
+    pos_value = 1
+    neg_value = -1
+
+    positive = X_scaled[y == pos_value]
+    negative = X_scaled[y == neg_value]
+
+    print(f"label column: {label_col}")
+    print(f"positive shape: {positive.shape}")
+    print(f"negative shape: {negative.shape}")
+
+    print("saving data...")
+    np.save(saving_dir + "codrna_positive.npy", positive)
+    np.save(saving_dir + "codrna_negative.npy", negative)
 
 
 def augment_sequence_with_replacement(sequence, required_len):
