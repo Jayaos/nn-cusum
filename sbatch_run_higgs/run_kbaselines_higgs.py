@@ -33,7 +33,6 @@ if __name__ == "__main__":
 
     args = parse_args()
     
-
     if args.dataset_type == "higgs_all":
 
         signal = np.load(os.path.join(args.dataset_dir, "higgs_all_signal.npy"))
