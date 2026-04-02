@@ -42,7 +42,7 @@ if __name__ == "__main__":
     f1_sequence = generate_gaussian_mean_shift_q(
         args.data_dim,
         args.iter_num * f1_chunk_size,
-        args.ms_delta,
+        args.delta,
         args.seed,
     )
 
