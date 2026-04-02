@@ -16,6 +16,7 @@ def parse_args():
     p.add_argument("--save_dir", type=str, default="./results/")
     p.add_argument("--data_dim", type=int, required=True)
     p.add_argument("--delta", type=float, required=True)
+    p.add_argument("--window_size", type=int, default=100)
     p.add_argument("--f0_len", type=int)
     p.add_argument("--f1_len", type=int)
     p.add_argument("--iter_num", type=int)
@@ -58,10 +59,10 @@ if __name__ == "__main__":
                      os.path.join(args.save_dir, "mewma/"))
 
 
-    run_wlcusum(100, args.f0_len, args.f1_len, 
+    run_wlcusum(args.window_size, args.f0_len, args.f1_len, 
                 f0_sequence, f1_sequence, args.iter_num,
                 os.path.join(args.save_dir, "wlcusum/"))
     
-    run_wlglr(100, args.f0_len, args.f1_len, 
+    run_wlglr(args.window_size, args.f0_len, args.f1_len, 
               f0_sequence, f1_sequence, args.iter_num,
               os.path.join(args.save_dir, "wlglr/"))
