@@ -14,11 +14,12 @@ def parse_args():
     p = argparse.ArgumentParser()
 
     p.add_argument("--save_dir", type=str, default="./results/")
-    p.add_argument("--dataset_type", type=str, default="susy_all")
-    p.add_argument("--dataset_dir", type=str, default="./data/")
+    p.add_argument("--data_dim", type=int, required=True)
+    p.add_argument("--delta", type=float, required=True)
     p.add_argument("--f0_len", type=int)
     p.add_argument("--f1_len", type=int)
     p.add_argument("--iter_num", type=int)
+    p.add_argument("--seed", type=int, default=2026)
 
     return p.parse_args()
 
