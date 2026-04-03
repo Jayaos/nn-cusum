@@ -76,15 +76,20 @@ def generate_gaussian_mixture_p(dim, n, seed=None):
     return X
 
 
-def generate_gaussian_mixture_q(dim, n, seed=None):
+def generate_gaussian_mixture_q(dim, n, seed=None, mu3=None, diag=None):
     """
     Generate n samples from
 
         Q = 1/3 N(2*1, I_d)
           + 1/3 N(-2*1, I_d)
-          + 1/3 N((13/5)*1, 0.8 I_d + 0.2 E)
+          + 1/3 N(mu3, Sigma3)
 
-    where E is the all-ones matrix.
+    where
+
+        Sigma3 = I_d - D^2 + D E D
+
+    with E the all-ones matrix and D = diag by default chosen so that
+    Sigma3 = 0.8 I_d + 0.2 E, matching the notebook setting rho = 0.2.
 
     Parameters
     ----------
@@ -94,6 +99,12 @@ def generate_gaussian_mixture_q(dim, n, seed=None):
         Number of samples.
     seed : int or None
         Random seed.
+    mu3 : np.ndarray of shape (dim,) or None
+        Mean of the third Gaussian component. If None, use the notebook's
+        current default mu3 = 0.
+    diag : np.ndarray of shape (dim, dim) or None
+        Diagonal matrix D used to construct Sigma3. If None, use
+        D = sqrt(0.2) I_d, matching the notebook's current rho = 0.2.
 
     Returns
     -------
@@ -107,10 +118,19 @@ def generate_gaussian_mixture_q(dim, n, seed=None):
 
     mu1 = 2.0 * one
     mu2 = -2.0 * one
-    mu3 = (13.0 / 5.0) * one
+
+    if mu3 is None:
+        mu3 = np.zeros(dim)
+    else:
+        mu3 = np.asarray(mu3, dtype=float)
+
+    if diag is None:
+        diag = np.sqrt(0.2) * I
+    else:
+        diag = np.asarray(diag, dtype=float)
 
     sigma12 = I
-    sigma3 = 0.8 * I + 0.2 * E
+    sigma3 = I - diag @ diag + diag @ E @ diag
 
     z = rng.choice(3, size=n, p=[1/3, 1/3, 1/3])
 
