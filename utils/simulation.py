@@ -219,10 +219,14 @@ def generate_exponential_q(dim, n, seed=None):
     return X.astype(np.float32)
 
 
-def generate_gamma(shape, scale, dim, n, seed):
+def generate_gamma(shape, scale, dim, n, location_shift=None, seed=None):
 
-    if seed:
+    if seed is not None:
         np.random.seed(seed)
 
     X = np.random.gamma(shape, scale, size=[n,dim])
+
+    if location_shift is not None:
+        X = X + location_shift
+
     return X.astype(np.float32)

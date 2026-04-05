@@ -16,6 +16,7 @@ def parse_args():
     p.add_argument("--f0_scale", type=float, required=True)
     p.add_argument("--f1_shape", type=float, required=True)
     p.add_argument("--f1_scale", type=float, required=True)
+    p.add_argument("--f1_loc_shift", type=float, required=True)
     p.add_argument("--hidden_dims", type=int, nargs="+")
     p.add_argument("--window_size", type=int)
     p.add_argument("--stride", type=int)
@@ -47,13 +48,16 @@ if __name__ == "__main__":
         args.f0_scale,
         args.data_dim,
         args.iter_num * f0_chunk_size,
+        location_shift=None,
         seed=args.seed,
     )
+
     f1_sequence = generate_gamma(
         args.f1_shape,
         args.f1_scale,
         args.data_dim,
         args.iter_num * f1_chunk_size,
+        location_shift=args.f1_loc_shift,
         seed=args.seed + 1,
     )
 
