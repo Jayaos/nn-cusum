@@ -206,6 +206,7 @@ def generate_exponential_q(dim, n, seed=None):
 
     Returns
     -------
+
     X : np.ndarray of shape (n, dim), dtype float32
         Samples from q.
     """
@@ -215,4 +216,13 @@ def generate_exponential_q(dim, n, seed=None):
 
     rng = np.random.default_rng(seed)
     X = rng.exponential(scale=beta1, size=(n, dim)) + mu_q
+    return X.astype(np.float32)
+
+
+def generate_gamma(shape, scale, dim, n, seed):
+
+    if seed:
+        np.random.seed(seed)
+
+    X = np.random.gamma(shape, scale, size=[n,dim])
     return X.astype(np.float32)

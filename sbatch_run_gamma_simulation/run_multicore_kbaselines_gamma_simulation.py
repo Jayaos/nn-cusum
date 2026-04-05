@@ -11,7 +11,7 @@ from tqdm import tqdm
 from baselines.kcusum import get_kcusum
 from baselines.okcusum import get_okcusum
 from baselines.scanb import get_scanb
-from utils.simulation import generate_gaussian_mean_shift_p, generate_gaussian_mean_shift_q
+from utils.simulation import generate_gamma
 
 
 _WORKER_STATE = {}
@@ -23,7 +23,10 @@ def parse_args():
 
     p.add_argument("--save_dir", type=str, default="./results/")
     p.add_argument("--data_dim", type=int, required=True)
-    p.add_argument("--ms_delta", type=float, required=True)
+    p.add_argument("--f0_shape", type=float, required=True)
+    p.add_argument("--f0_scale", type=float, required=True)
+    p.add_argument("--f1_shape", type=float, required=True)
+    p.add_argument("--f1_scale", type=float, required=True)
     p.add_argument("--window_size", type=int, default=100)
     p.add_argument("--num_blocks", type=int, default=25)
     p.add_argument("--delta", type=float, default=1.0 / 50.0)
@@ -209,16 +212,19 @@ if __name__ == "__main__":
     f1_chunk_size = args.f1_len
     entire_sequence_len = args.f0_len + args.f1_len
 
-    f0_sequence = generate_gaussian_mean_shift_p(
+    f0_sequence = generate_gamma(
+        args.f0_shape,
+        args.f0_scale,
         args.data_dim,
         args.iter_num * f0_chunk_size,
-        args.seed,
+        seed=args.seed,
     )
-    f1_sequence = generate_gaussian_mean_shift_q(
+    f1_sequence = generate_gamma(
+        args.f1_shape,
+        args.f1_scale,
         args.data_dim,
         args.iter_num * f1_chunk_size,
-        args.ms_delta,
-        args.seed,
+        seed=args.seed + 1,
     )
 
     tasks = _build_tasks(args.iter_num, args.chunk_size)
