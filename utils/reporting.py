@@ -46,10 +46,14 @@ def calculate_type1err_edd(stat_record, alpha_list, cp_location):
     return type1err_edd_record
 
 
-def count_failures(EDD_record, ind_list, max_len):
+def count_type1err_success(stat_record, alpha_list, cp_location):
+
+    iter_num, seq_len = stat_record.shape
+    f1_len = seq_len - cp_location
     
-    tf_arr = EDD_record == max_len
+    type1err_edd_record = calculate_type1err_edd(stat_record, alpha_list, cp_location)
+    tf_arr = type1err_edd_record != f1_len
     colsum = np.sum(tf_arr, axis=0)
     
-    for ind, sums in zip(ind_list, colsum):
-        print("{} : {} failures".format(ind, sums))
+    for ind, sums in zip(alpha_list, colsum):
+        print("{} : {} successes".format(ind/100, sums))
