@@ -161,6 +161,35 @@ def generate_gaussian_mixture_q(dim, n, seed=None, mu3=None, diag=None):
     return X
 
 
+def generate_exponential(dim, n, beta=1.0, mu=0.0, seed=None):
+    """
+    Generate samples where each coordinate is i.i.d.
+
+        X^i ~ Exp(beta) + mu
+
+    Parameters
+    ----------
+    n : int
+        Number of samples.
+    dim : int, default=1
+        Dimension of each sample.
+    beta : float, default=1.0
+        Exponential scale parameter.
+    mu : float, default=0.0
+        Additive location shift applied after sampling.
+    seed : int or None, default=None
+        Random seed.
+
+    Returns
+    -------
+    X : np.ndarray of shape (n, dim), dtype float32
+        Samples from the specified shifted exponential distribution.
+    """
+    rng = np.random.default_rng(seed)
+    X = rng.exponential(scale=beta, size=(n, dim)) + mu
+    return X.astype(np.float32)
+
+
 def generate_exponential_p(dim, n, seed=None):
     """
     Generate samples from p ~ f0, where each coordinate is i.i.d.
@@ -182,9 +211,7 @@ def generate_exponential_p(dim, n, seed=None):
         Samples from p.
     """
     beta0 = 1.0
-    rng = np.random.default_rng(seed)
-    X = rng.exponential(scale=beta0, size=(n, dim))
-    return X.astype(np.float32)
+    return generate_exponential(dim, n, beta=beta0, mu=0.0, seed=seed)
 
 
 def generate_exponential_q(dim, n, seed=None):
@@ -214,9 +241,7 @@ def generate_exponential_q(dim, n, seed=None):
     beta1 = 0.8
     mu_q = beta0 - beta1  # 0.2
 
-    rng = np.random.default_rng(seed)
-    X = rng.exponential(scale=beta1, size=(n, dim)) + mu_q
-    return X.astype(np.float32)
+    return generate_exponential(dim, n, beta=beta1, mu=mu_q, seed=seed)
 
 
 def generate_gamma(shape, scale, dim, n, location_shift=None, seed=None):

@@ -2,7 +2,7 @@ from baselines.ewma import run_uniform_ewma
 from baselines.hotelling_cusum import run_hotelling_cusum
 from baselines.wlcusum import run_wlcusum
 from baselines.wlglr import run_wlglr
-from utils.simulation import generate_exponential_p, generate_exponential_q
+from utils.simulation import generate_exponential
 import argparse
 import torch
 import sys
@@ -16,6 +16,10 @@ def parse_args():
     p.add_argument("--save_dir", type=str, default="./results/")
     p.add_argument("--data_dim", type=int, required=True)
     p.add_argument("--window_size", type=int, default=100)
+    p.add_argument("--f0_beta", type=float, default=1.0)
+    p.add_argument("--f0_mu", type=float, default=0.0)
+    p.add_argument("--f1_beta", type=float, default=0.8)
+    p.add_argument("--f1_mu", type=float, default=0.2)
     p.add_argument("--f0_len", type=int)
     p.add_argument("--f1_len", type=int)
     p.add_argument("--iter_num", type=int)
@@ -34,12 +38,16 @@ if __name__ == "__main__":
     f0_chunk_size = 2 * args.f0_len + args.f1_len
     f1_chunk_size = args.f1_len
 
-    f0_sequence = generate_exponential_p(args.data_dim, 
-                                         args.iter_num * f0_chunk_size, 
-                                         args.seed)
-    f1_sequence = generate_exponential_q(args.data_dim, 
-                                         args.iter_num * f1_chunk_size,
-                                         args.seed)
+    f0_sequence = generate_exponential(args.data_dim,
+                                       args.iter_num * f0_chunk_size,
+                                       beta=args.f0_beta,
+                                       mu=args.f0_mu,
+                                       seed=args.seed)
+    f1_sequence = generate_exponential(args.data_dim,
+                                       args.iter_num * f1_chunk_size,
+                                       beta=args.f1_beta,
+                                       mu=args.f1_mu,
+                                       seed=args.seed)
     
     run_hotelling_cusum(args.f0_len, args.f1_len, 
                         f0_sequence, 
