@@ -16,6 +16,13 @@ from baselines._kernel_mmd import eu_dist2, rbf_kernel_from_dist2
 DEFAULT_BANDWIDTH_FACTORS = (0.25, 0.5, 1.0, 2.0, 4.0)
 
 
+def print_progress(label, completed, total, every=1):
+    if label is None:
+        return
+    if completed == total or completed % every == 0:
+        print(f"{label}: batch {completed}/{total}", flush=True)
+
+
 def load_samples(path):
     samples = np.load(path)
     samples = np.asarray(samples, dtype=float)
@@ -92,9 +99,18 @@ def cross_median_bandwidth(f0_samples, f1_samples, num_median_pairs, rng):
     return float(np.median(positive_distances))
 
 
-def off_diagonal_kernel_mean(samples, bandwidth, batch_size):
+def off_diagonal_kernel_mean(
+    samples,
+    bandwidth,
+    batch_size,
+    progress_label=None,
+    progress_every=1,
+):
     total = 0.0
     num_samples = samples.shape[0]
+    num_batches = (num_samples + batch_size - 1) // batch_size
+    total_batches = num_batches * num_batches
+    completed_batches = 0
 
     for start in range(0, num_samples, batch_size):
         stop = min(start + batch_size, num_samples)
@@ -105,30 +121,85 @@ def off_diagonal_kernel_mean(samples, bandwidth, batch_size):
             if start == other_start:
                 kernel[np.arange(stop - start), np.arange(stop - start)] = 0.0
             total += float(np.sum(kernel))
+            completed_batches += 1
+            print_progress(
+                progress_label,
+                completed_batches,
+                total_batches,
+                every=progress_every,
+            )
 
     return total / (num_samples * (num_samples - 1))
 
 
-def cross_kernel_mean(f0_samples, f1_samples, bandwidth, batch_size):
+def cross_kernel_mean(
+    f0_samples,
+    f1_samples,
+    bandwidth,
+    batch_size,
+    progress_label=None,
+    progress_every=1,
+):
     total = 0.0
+    num_f0_batches = (f0_samples.shape[0] + batch_size - 1) // batch_size
+    num_f1_batches = (f1_samples.shape[0] + batch_size - 1) // batch_size
+    total_batches = num_f0_batches * num_f1_batches
+    completed_batches = 0
+
     for start in range(0, f0_samples.shape[0], batch_size):
         stop = min(start + batch_size, f0_samples.shape[0])
         for other_start in range(0, f1_samples.shape[0], batch_size):
             other_stop = min(other_start + batch_size, f1_samples.shape[0])
             dist2 = eu_dist2(f0_samples[start:stop], f1_samples[other_start:other_stop])
             total += float(np.sum(rbf_kernel_from_dist2(dist2, bandwidth)))
+            completed_batches += 1
+            print_progress(
+                progress_label,
+                completed_batches,
+                total_batches,
+                every=progress_every,
+            )
     return total / (f0_samples.shape[0] * f1_samples.shape[0])
 
 
-def unbiased_mmd2_rbf(f0_samples, f1_samples, bandwidth, batch_size=10000):
+def unbiased_mmd2_rbf(
+    f0_samples,
+    f1_samples,
+    bandwidth,
+    batch_size=10000,
+    progress_prefix=None,
+    progress_every=1,
+):
     if bandwidth <= 0.0:
         raise ValueError("bandwidth must be positive")
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
 
-    k00 = off_diagonal_kernel_mean(f0_samples, bandwidth, batch_size)
-    k11 = off_diagonal_kernel_mean(f1_samples, bandwidth, batch_size)
-    k01 = cross_kernel_mean(f0_samples, f1_samples, bandwidth, batch_size)
+    label = None if progress_prefix is None else f"{progress_prefix} k00"
+    k00 = off_diagonal_kernel_mean(
+        f0_samples,
+        bandwidth,
+        batch_size,
+        progress_label=label,
+        progress_every=progress_every,
+    )
+    label = None if progress_prefix is None else f"{progress_prefix} k11"
+    k11 = off_diagonal_kernel_mean(
+        f1_samples,
+        bandwidth,
+        batch_size,
+        progress_label=label,
+        progress_every=progress_every,
+    )
+    label = None if progress_prefix is None else f"{progress_prefix} k01"
+    k01 = cross_kernel_mean(
+        f0_samples,
+        f1_samples,
+        bandwidth,
+        batch_size,
+        progress_label=label,
+        progress_every=progress_every,
+    )
     return float(k00 + k11 - 2.0 * k01)
 
 
@@ -141,6 +212,8 @@ def estimate_mmd2(
     max_samples=None,
     standardize=True,
     batch_size=2000,
+    verbose=False,
+    progress_every=1,
 ):
     bandwidth_factors = np.asarray(
         DEFAULT_BANDWIDTH_FACTORS if bandwidth_factors is None else bandwidth_factors,
@@ -154,6 +227,8 @@ def estimate_mmd2(
         raise ValueError("max_samples must be at least 2")
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
+    if progress_every <= 0:
+        raise ValueError("progress_every must be positive")
 
     f0_samples = np.asarray(f0_samples, dtype=float)
     f1_samples = np.asarray(f1_samples, dtype=float)
@@ -184,16 +259,36 @@ def estimate_mmd2(
     bandwidth_grid = median_bandwidth * bandwidth_factors
 
     bandwidth_results = []
-    for bandwidth in bandwidth_grid:
+    for bandwidth_index, bandwidth in enumerate(bandwidth_grid, start=1):
+        if verbose:
+            print(
+                f"bandwidth {bandwidth_index}/{len(bandwidth_grid)}: "
+                f"{float(bandwidth):.6g}",
+                flush=True,
+            )
+        progress_prefix = (
+            f"bandwidth {bandwidth_index}/{len(bandwidth_grid)}"
+            if verbose
+            else None
+        )
+        mmd2_unbiased = unbiased_mmd2_rbf(
+            f0_samples=f0_eval,
+            f1_samples=f1_eval,
+            bandwidth=float(bandwidth),
+            batch_size=batch_size,
+            progress_prefix=progress_prefix,
+            progress_every=progress_every,
+        )
+        if verbose:
+            print(
+                f"bandwidth {bandwidth_index}/{len(bandwidth_grid)} result: "
+                f"mmd2_unbiased={mmd2_unbiased:.6g}",
+                flush=True,
+            )
         bandwidth_results.append(
             {
                 "bandwidth": float(bandwidth),
-                "mmd2_unbiased": unbiased_mmd2_rbf(
-                    f0_samples=f0_eval,
-                    f1_samples=f1_eval,
-                    bandwidth=float(bandwidth),
-                    batch_size=batch_size,
-                ),
+                "mmd2_unbiased": mmd2_unbiased,
             }
         )
 
@@ -230,8 +325,19 @@ def parse_args():
     parser.add_argument("--num_median_pairs", type=int, default=10000)
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=2000)
+    parser.add_argument(
+        "--progress_every",
+        type=int,
+        default=1,
+        help="When --verbose is set, print one progress line every N kernel batches.",
+    )
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--save_path", type=str, default=None)
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print bandwidth and kernel batch progress to stdout.",
+    )
 
     standardize_group = parser.add_mutually_exclusive_group()
     standardize_group.add_argument(
@@ -264,6 +370,8 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         standardize=args.standardize,
         batch_size=args.batch_size,
+        verbose=args.verbose,
+        progress_every=args.progress_every,
     )
     result["f0_path"] = os.path.abspath(args.f0_path)
     result["f1_path"] = os.path.abspath(args.f1_path)
