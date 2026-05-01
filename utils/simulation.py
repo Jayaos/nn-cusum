@@ -190,60 +190,6 @@ def generate_exponential(dim, n, beta=1.0, mu=0.0, seed=None):
     return X.astype(np.float32)
 
 
-def generate_exponential_p(dim, n, seed=None):
-    """
-    Generate samples from p ~ f0, where each coordinate is i.i.d.
-
-        f0^i ~ Exp(beta0),   beta0 = 1
-
-    Parameters
-    ----------
-    n : int
-        Number of samples.
-    dim : int, default=1
-        Dimension of each sample.
-    seed : int or None, default=None
-        Random seed.
-
-    Returns
-    -------
-    X : np.ndarray of shape (n, dim), dtype float32
-        Samples from p.
-    """
-    beta0 = 1.0
-    return generate_exponential(dim, n, beta=beta0, mu=0.0, seed=seed)
-
-
-def generate_exponential_q(dim, n, seed=None):
-    """
-    Generate samples from q ~ f1, where each coordinate is i.i.d.
-
-        f1^i ~ Exp(beta1) + mu_q,
-        beta1 = 0.8,
-        mu_q = beta0 - beta1 = 0.2
-
-    Parameters
-    ----------
-    n : int
-        Number of samples.
-    dim : int, default=1
-        Dimension of each sample.
-    seed : int or None, default=None
-        Random seed.
-
-    Returns
-    -------
-
-    X : np.ndarray of shape (n, dim), dtype float32
-        Samples from q.
-    """
-    beta0 = 1.0
-    beta1 = 0.8
-    mu_q = beta0 - beta1  # 0.2
-
-    return generate_exponential(dim, n, beta=beta1, mu=mu_q, seed=seed)
-
-
 def generate_gamma(shape, scale, dim, n, location_shift=None, seed=None):
 
     if seed is not None:
