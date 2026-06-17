@@ -57,3 +57,28 @@ def count_type1err_success(stat_record, alpha_list, cp_location):
     
     for ind, sums in zip(alpha_list, colsum):
         print("{} : {} successes".format(ind/100, sums))
+
+
+def print_avg_type1err_edd(stat_record, alpha_list, cp_location):
+
+    alpha_list = np.array(alpha_list)
+    iter_num = stat_record.shape[0]
+    online_size = stat_record.shape[1]-cp_location
+    h0_stat_record = stat_record[:,:cp_location]
+    h1_stat_record = stat_record[:,cp_location:]
+    h0_stat_record_max = np.max(h0_stat_record, axis=1)
+    thresholds = np.percentile(h0_stat_record_max, 100-alpha_list)
+    
+    type1err_edd_record = np.zeros((iter_num, len(alpha_list)))
+
+    for i, threshold in enumerate(thresholds):
+        for j in range(iter_num):
+            try:
+                type1err_edd_record[j,i] = np.argwhere(h1_stat_record[j,:] >= threshold)[0][0]
+            except:
+                type1err_edd_record[j,i] = online_size
+
+    avg_type1err_edd = np.mean(type1err_edd_record, axis=0)
+                
+    for ind, avg in zip(alpha_list, avg_type1err_edd):
+        print("{} : {} average EDD".format(ind/100, avg))
