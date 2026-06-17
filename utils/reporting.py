@@ -59,7 +59,7 @@ def count_type1err_success(stat_record, alpha_list, cp_location):
         print("{} : {} successes".format(ind/100, sums))
 
 
-def print_avg_type1err_edd(stat_record, alpha_list, cp_location):
+def report_avg_type1err_edd(stat_record, alpha_list, cp_location):
 
     alpha_list = np.array(alpha_list)
     iter_num = stat_record.shape[0]
